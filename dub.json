@@ -1,0 +1,21 @@
+{
+	"authors": [
+		"Paul"
+	],
+	"copyright": "Copyright © 2023, Paul",
+	"description": "A minimal D application.",
+	"license": "proprietary",
+	"name": "ray",
+	"dependencies": {
+		"vertexd": {
+			"path": "../VertexD"
+		}
+	},
+	"copyFiles": [
+		"source/shaders/*",
+		"glfw3.dll",
+		"glfw3dll.lib"
+	],
+	"targetPath": "build/",
+	"workingDirectory": "build/"
+}
