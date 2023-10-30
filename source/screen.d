@@ -83,12 +83,3 @@ final class Screen : Node {
 		shader.setUniformHandle(pixelUniformLocation, handle.handleID);
 	}
 }
-
-class NoCamera : Camera {
-	this() {
-		super(Mat!4(1));
-	}
-
-	override void use() {
-	}
-}
