@@ -8,12 +8,16 @@ import player;
 import raytracer;
 
 void main() {
+	uint width = 1920/2;
+	uint height = 1080/2;
+
 	vdInit();
-	Window window = new Window("Ray");
+	Window window = new Window("Ray", width, height);
 	window.setBackgroundColor(Vec!4(0, 0, 0.5, 1));
 	// GltfReader reader = new GltfReader("world");
 
-	Screen screen = new Screen(1920 / 2, 1080 / 2);
+
+	Screen screen = new Screen(width, height);
 	Camera camera = new RayCamera(); // Actual raytracing outside of framework.
 
 	World world = new World();
