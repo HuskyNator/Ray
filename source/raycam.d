@@ -17,6 +17,11 @@ class RayCamera : Camera {
 		this.focalLength = focalLength;
 	}
 
+	override void update(){
+		this.location = Vec!3(owner.modelMatrix.col(3)[0 .. 3]);
+		this.cameraMatrix = owner.modelMatrix;
+	}
+
 	override void use() {
 		RayTracer.scene.cam = RayCamS(location, cameraMatrix, focalLength);
 	}
