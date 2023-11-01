@@ -14,8 +14,7 @@ class Quad : Mesh {
 		float w = width / 2;
 		float h = height / 2;
 		float[3][] positions = [
-			[-w, -h, 0], [w, -h, 0], [-w, h, 0],
-			[w, -h, 0], [w, h, 0], [-w, h, 0]
+			[-w, -h, 0], [w, -h, 0], [-w, h, 0], [w, -h, 0], [w, h, 0], [-w, h, 0]
 		];
 		setAttribute(Mesh.Attribute(positions), 0);
 
@@ -23,10 +22,7 @@ class Quad : Mesh {
 		normals[] = [0, 0, 1];
 		setAttribute(Mesh.Attribute(normals), 1);
 
-		float[2][] uvs = [
-			[0, 0], [1, 0], [0, 1],
-			[1, 0], [1, 1], [0, 1]
-		];
+		float[2][] uvs = [[0, 0], [1, 0], [0, 1], [1, 0], [1, 1], [0, 1]];
 		setAttribute(Mesh.Attribute(uvs), 2);
 
 		setIndexCount(6);
@@ -73,7 +69,11 @@ final class Screen : Node {
 	}
 
 	void setPixel(uint x, uint y, Vec!4 color) {
-		Vec!(4, ubyte) pixel = cast(Vec!(4, ubyte))(color * 255);
+		import std.algorithm : clamp;
+
+		ubyte[4] pixel;
+		foreach (i; 0 .. 4)
+			pixel[i] = cast(ubyte)(color[i].clamp(0.0f, 1.0f) * 255);
 		texture.pixels[width * y + x] = pixel;
 	}
 

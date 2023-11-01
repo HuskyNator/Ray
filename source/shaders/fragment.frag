@@ -9,5 +9,6 @@ out vec4 color;
 
 void main(){
 	color = texture(pixels, uv_frag);
-	// color = vec4(uv_frag,0,1);
+	//color = vec4(uv_frag,0,1);
+	//color=vec4(1,0,0,1);
 }

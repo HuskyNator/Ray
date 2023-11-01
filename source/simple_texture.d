@@ -65,7 +65,10 @@ class BindlessTexture { // TextureHandle
 }
 
 class Texture {
-	import imageformats;
+	import gamut;
+
+	static ushort constraints = LAYOUT_GAPLESS | LAYOUT_VERT_STRAIGHT;
+	static int loadConstraint = LOAD_8BIT | LOAD_RGB | LOAD_ALPHA;
 
 	string name;
 	uint id;
@@ -88,27 +91,37 @@ class Texture {
 		this.width = W;
 		this.height = H;
 
-		this.pixels = pixels;
+		this.pixels = pixels.dup;
 		if (pixels is null)
 			this.pixels = new ubyte[4][W * H];
 
 		assert(this.pixels.length == W * H);
 	}
 
-	this(IFImage img, string name = "Texture") {
-		this(img.w, img.h, cast(ubyte[4][]) img.pixels, name);
+	this(Image img, string name = "Texture") {
+		this(img.width(), img.height(), cast(ubyte[4][])(img.allPixelsAtOnce()), name);
 	}
 
 	this(string file, string name = "") {
-		this(read_image(file, ColFmt.RGBA), name);
+		this(this.readImage(file), name);
 	}
 
-	static IFImage readImage(string file) {
-		return read_image(file, ColFmt.RGBA);
+	static Image readImage(string file) {
+		Image image;
+		enforce(image.loadFromFile(file, constraints | loadConstraint), "Could not load image from file."); // rgba8
+		return image;
 	}
 
-	static IFImage readImage(ubyte[] content) {
-		return read_image_from_mem(content, ColFmt.RGBA);
+	static Image readImage(ubyte[] content) {
+		Image image;
+		enforce(image.loadFromMemory(content, constraints | loadConstraint), "Could not load image from memory."); // rgba8
+		return image;
+	}
+
+	~this() {
+		glDeleteTextures(1, &id);
+		write("Texture removed: ");
+		writeln(id);
 	}
 
 	// enum Access {
@@ -126,12 +139,12 @@ class Texture {
 	// 	glBindTexture(GL_TEXTURE_2D, id);
 	// }
 
-	void saveImage(string path, GLint level = 0) { // TODO or = 1?
-		glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT); // TODO: check vs update bit
-
-		glGetTextureImage(id, level, GL_RGBA, GL_UNSIGNED_BYTE,
-			cast(int)(width * height * 4 * ubyte.sizeof), pixels.ptr);
-		write_png(path, width, height, cast(ubyte[]) pixels, ColFmt.RGBA);
+	void saveImage(string path) {
+		Image image = Image(cast(int) width, cast(int) height, PixelType.rgba8, constraints);
+		ubyte[] original = image.allPixelsAtOnce();
+		original[] = cast(ubyte[])pixels[];
+		image.flipVertical();
+		enforce(image.saveToFile(ImageFormat.PNG, path), "Could not save image to file.");
 	}
 
 	// Note mipmap map depend on sampler.usesMipMap()
@@ -151,9 +164,9 @@ class Texture {
 			glGenerateTextureMipmap(id);
 	}
 
-	~this() {
-		glDeleteTextures(1, &id);
-		write("Texture removed: ");
-		writeln(id);
+	void download(GLint level = 0) { // oposite of upload()
+		glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT); // TODO: check vs update bit
+		glGetTextureImage(id, level, GL_RGBA, GL_UNSIGNED_BYTE, cast(int)(width * height * 4 * ubyte.sizeof),
+			pixels.ptr);
 	}
 }

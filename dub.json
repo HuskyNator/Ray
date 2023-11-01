@@ -2,20 +2,21 @@
 	"authors": [
 		"Paul"
 	],
-	"copyright": "Copyright © 2023, Paul",
-	"description": "A minimal D application.",
-	"license": "proprietary",
-	"name": "ray",
-	"dependencies": {
-		"vertexd": {
-			"path": "../VertexD"
-		}
-	},
 	"copyFiles": [
 		"source/shaders/*",
 		"glfw3.dll",
 		"glfw3dll.lib"
 	],
+	"copyright": "Copyright © 2023, Paul",
+	"dependencies": {
+		"gamut": "~>2.3.0",
+		"vertexd": {
+			"path": "../VertexD"
+		}
+	},
+	"description": "A minimal D application.",
+	"license": "proprietary",
+	"name": "ray",
 	"targetPath": "build/",
 	"workingDirectory": "build/"
 }

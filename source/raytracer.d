@@ -28,17 +28,19 @@ struct RayTracer {
 static:
 	Scene scene;
 	void rayTrace(Screen screen) {
+		float wFrac = 1.0f / screen.width;
+		float hFrag = 1.0f / screen.height;
 		foreach (x; 0 .. screen.width) {
 			foreach (y; 0 .. screen.height) {
-				Vec!2 delta = Vec!2(x * (1.0f / screen.width), y * (1.0f / screen.height)) * 2 - Vec!2(1, 1);
-
-				import std.math;
+				Vec!2 delta = Vec!2(x * wFrac, y * hFrag) * 2 - Vec!2(1, 1);
 
 				Vec!3 dir_cam = Vec!3(delta.x, delta.y, -scene.cam.focalLength).normalize();
 				Vec!4 dir_world4 = scene.cam.camMatrix ^ Vec!4(dir_cam.x, dir_cam.y, dir_cam.z, 0);
 				Vec!3 dir_world = Vec!3(dir_world4.x, dir_world4.y, dir_world4.z).normalize();
 
 				Vec!4 color = trace(scene, dir_world);
+				// Vec!4 color = Vec!4(dir_world.x, dir_world.y, 0, 1);
+				color = Vec!4(delta.x, delta.y, 0, 1);
 				screen.setPixel(x, y, color);
 			}
 		}
