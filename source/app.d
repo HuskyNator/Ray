@@ -29,25 +29,25 @@ void main(string[] args) {
 	GltfReader gltfReader = new GltfReader("cube.gltf");
 	GltfMesh mesh = gltfReader.meshes[0][0];
 
-	Scene scene;
-	scene.lights = [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))];
-	scene.indices = mesh.index.attr.getContent!3().dup;
-	scene.positions = (cast(
-			Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh.attributeSet.position.elementCount].dup;
-	scene.normals = (cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount].dup;
-	scene.colors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0 .. mesh.attributeSet.color[0].elementCount]
-		.dup;
-	scene.backgroundColor = Vec!4(0, 0.8, 0, 1);
+	World world = new World();
+	window.world = world;
 
 	Screen screen = new Screen(width, height);
-	RayTracer rayTracer = RayTracer(1, true, screen);
-	rayTracer.scene = scene;
-	RayCamera camera = new RayCamera(&rayTracer, degreesToRadians(90.0f)); // Actual raytracing outside of framework.
-
-	World world = new World();
 	world.addNode(screen);
+
+	RayCamera camera = new RayCamera(degreesToRadians(90.0f)); // Actual raytracing outside of framework.
 	world.cameras ~= camera;
-	window.world = world;
+
+	Scene scene = {
+		camera: camera, lights: [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))], indices: mesh.index.attr.getContent!3()
+			.dup, positions: (cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0
+				.. mesh.attributeSet.position.elementCount].dup, normals: (
+				cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount].dup,
+		colors: (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0 .. mesh.attributeSet.color[0].elementCount]
+			.dup, backgroundColor: Vec!4(0, 0.8, 0, 1),
+	};
+
+	RayTracer rayTracer = RayTracer(scene, screen, true, 1);
 
 	Speler speler = new Speler();
 	world.addNode(speler);

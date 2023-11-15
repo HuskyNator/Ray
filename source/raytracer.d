@@ -3,9 +3,9 @@ import bvh;
 import core.atomic;
 import core.sync.semaphore;
 import core.thread;
+import gate;
 import raycam;
 import screen;
-import gate;
 import std.algorithm : max, min;
 import std.parallelism : totalCPUs;
 import vertexd.core;
@@ -17,7 +17,7 @@ float u_specular = .2;
 float u_specular_power = 50;
 
 struct Scene {
-	RayCamS cam;
+	RayCamera camera;
 	Light[] lights;
 
 	BVH bvh;
@@ -94,9 +94,10 @@ struct RayTracer {
 
 	/// Params:
 	///   maxDepth = The max reflection depth
-	this(uint maxDepth, bool useBVH, Screen screen) {
+	this(Scene scene, Screen screen, bool useBVH, uint maxDepth) {
 		this.maxDepth = maxDepth;
 		this.useBVH = useBVH;
+		this.scene = scene;
 		this.screen = screen;
 
 		immutable uint threadNum = max(1, totalCPUs - 1);
@@ -149,10 +150,10 @@ struct RayTracer {
 		Vec!2 delta = Vec!2(x * widthFrac, y * heightFrag * verticalFrac) * 2 - Vec!2(1, verticalFrac);
 
 		Vec!3 dir_cam = Vec!3(delta.x, delta.y, virtualPlaneZ).normalize();
-		Vec!4 dir_world4 = scene.cam.camMatrix ^ Vec!4(dir_cam.x, dir_cam.y, dir_cam.z, 0);
+		Vec!4 dir_world4 = scene.camera.cameraMatrix ^ Vec!4(dir_cam.x, dir_cam.y, dir_cam.z, 0);
 		Vec!3 dir_world = Vec!3(dir_world4.x, dir_world4.y, dir_world4.z).normalize();
 
-		Ray ray = Ray(scene.cam.pos, dir_world);
+		Ray ray = Ray(scene.camera.location, dir_world);
 		Vec!4 color = trace(ray, 0);
 		// Vec!4 color = Vec!4(dir_world.x,dir_world.y,0, 1);
 		screen.setPixel(x, y, color);
@@ -164,7 +165,7 @@ struct RayTracer {
 
 		scene.prepare(useBVH);
 
-		this.virtualPlaneZ = -1.0f / tan(scene.cam.fov / 2.0f);
+		this.virtualPlaneZ = -1.0f / tan(scene.camera.fov / 2.0f);
 		this.verticalFrac = cast(float) screen.height / cast(float) screen.width;
 
 		this.widthFrac = 1.0f / cast(float) screen.width;
