@@ -67,13 +67,12 @@ void main(string[] args) {
 		rayTracer.trace();
 		screen.texture.saveImage(logPath ~ commitName ~ ".jpg");
 
-		// string performancePath = logPath ~ "performance.txt";
-		// if (!exists(performancePath))
-		// 	File(performancePath, "w").writeln("Previous commit : seconds/frame");
-		// float frameTime = cast(float) benchmark!(() { rayTracer.trace(); })(10)[0].total!"usecs";
-		// frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
-		// File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
-		rayTracer.killThreads();
+		string performancePath = logPath ~ "performance.txt";
+		if (!exists(performancePath))
+			File(performancePath, "w").writeln("Previous commit : seconds/frame");
+		float frameTime = cast(float) benchmark!(() { rayTracer.trace(); })(10)[0].total!"usecs";
+		frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
+		File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
 	} else
 		while (!vdShouldClose()) {
 			rayTracer.trace();

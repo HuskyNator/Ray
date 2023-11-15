@@ -14,5 +14,7 @@ ray-test-*
 *.obj
 *.lst
 
+*.jpg
+
 build/
 .vscode/

@@ -1,11 +1,11 @@
 module raytracer;
 import bvh;
 import core.atomic;
-import core.sync.condition;
+import core.sync.semaphore;
 import core.thread;
-import core.thread.threadbase;
 import raycam;
 import screen;
+import gate;
 import std.algorithm : max, min;
 import std.parallelism : totalCPUs;
 import vertexd.core;
@@ -46,10 +46,7 @@ struct Scene {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [
-				positions[triangle[0]], positions[triangle[1]],
-				positions[triangle[2]]
-			];
+			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
 	}
@@ -71,31 +68,28 @@ struct RayTracer {
 	Scene scene;
 	Screen screen;
 
-	Thread[] threads;
-	uint[2][] threadParams;
-	uint[2][] TEMP;
-	Condition threadCondition;
-	shared uint atomicInt = 0;
-	shared uint tempAtomicInt2; //TODO
-	shared uint waitingInt = 0;
+	private {
+		Thread[] threads;
+		uint[2][] threadParams;
+		Gate threadGate;
+		shared uint atomicInt = 0;
 
-	float virtualPlaneZ;
-	float verticalFrac;
-	float widthFrac;
-	float heightFrag;
+		float virtualPlaneZ;
+		float verticalFrac;
+		float widthFrac;
+		float heightFrag;
 
-	uint actualThreadNum;
-	bool DIE = false;
+		uint actualThreadNum;
+		bool DIE = false;
+	}
 
-	void killThreads() {
-		atomicStore(DIE, true);
-
-		while (atomicLoad(waitingInt) < actualThreadNum)
+	~this() {
+		while (threadGate.waiters < actualThreadNum)
 			Thread.yield();
-
-		threadCondition.notifyAll();
-		// foreach (Thread t; threads)
-		// 	t.join(); // TODO timeout.
+		atomicStore(DIE, true);
+		threadGate.open();
+		foreach (Thread t; threads)
+			t.join();
 	}
 
 	/// Params:
@@ -111,8 +105,7 @@ struct RayTracer {
 		this.actualThreadNum = threadNum + ((loss > 0) ? 1 : 0); // TODO BUGREPORT ZONDER HAAKJES
 
 		this.threads = new Thread[actualThreadNum];
-		this.threadCondition = new Condition(new Mutex());
-		this.waitingInt = 0;
+		this.threadGate = new Gate();
 
 		foreach (uint t; 0 .. threadNum) {
 			threadParams ~= [t * perThread, (t + 1) * perThread];
@@ -124,22 +117,20 @@ struct RayTracer {
 			new Thread(&threadTrace).start();
 		}
 
+		// Wait for threads to initialize & reach the gate.
+		while (threadGate.waiters < actualThreadNum)
+			Thread.yield();
 	}
 
-	static uint id;
 	void threadTrace() {
-		import std.stdio;
-
-		id = atomicFetchAdd(atomicInt, 1);
-		writeln(id);
+		uint id = atomicFetchAdd(atomicInt, 1);
 		threads[id] = Thread.getThis();
 		uint start = threadParams[id][0];
 		uint end = threadParams[id][1];
 
 		// TODO Figure out how to end thread without creating `shouldStop` boolean (aka: kill it)
 		while (true) {
-			atomicFetchAdd(waitingInt, 1);
-			threadCondition.wait();
+			threadGate.wait();
 			if (atomicLoad(DIE))
 				break;
 			for (uint y = start; y < end; y++) {
@@ -175,18 +166,9 @@ struct RayTracer {
 		this.widthFrac = 1.0f / cast(float) screen.width;
 		this.heightFrag = 1.0f / cast(float) screen.height;
 
-		import std.stdio;
-
-		// TODO remove & wait at startup
-		while (atomicLoad(waitingInt) < actualThreadNum)
+		threadGate.open();
+		while (threadGate.waiters < actualThreadNum)
 			Thread.yield();
-		atomicStore(waitingInt, 0);
-		threadCondition.notifyAll();
-		while (atomicLoad(waitingInt) < actualThreadNum) {
-			// Thread.yield();
-			writeln(atomicLoad(waitingInt));
-			Thread.sleep(1.seconds);
-		}
 	}
 
 	Vec!4 trace(Ray ray, uint depth) {
@@ -202,8 +184,7 @@ struct RayTracer {
 
 				if (hitsBoundingBox(ray, box)) {
 					if (box.isLeaf) {
-						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
-							i++) {
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
 							float dist = intersectTriangle(ray, i);
 							if (dist < closest && dist > 0) {
 								closest = dist;
@@ -273,8 +254,7 @@ struct RayTracer {
 		Vec!3 point = ray.org + ray.dir * dist;
 		uint[3] triangle = scene.indices[index];
 		Vec!3[3] positions = [
-			scene.positions[triangle[0]], scene.positions[triangle[1]],
-			scene.positions[triangle[2]]
+			scene.positions[triangle[0]], scene.positions[triangle[1]], scene.positions[triangle[2]]
 		];
 		Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point);
@@ -362,8 +342,7 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
-		const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -384,8 +363,7 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
-			verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 
