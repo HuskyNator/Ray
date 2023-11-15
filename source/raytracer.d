@@ -133,10 +133,14 @@ struct RayTracer {
 			threadGate.wait();
 			if (atomicLoad(DIE))
 				break;
-			for (uint y = start; y < end; y++) {
-				for (uint x = 0; x < screen.width; x++) {
-					tracePixel(x, y);
-				}
+			traceRows(start, end);
+		}
+	}
+
+	void traceRows(uint start, uint end) {
+		for (uint y = start; y < end; y++) {
+			for (uint x = 0; x < screen.width; x++) {
+				tracePixel(x, y);
 			}
 		}
 	}
@@ -169,6 +173,7 @@ struct RayTracer {
 		threadGate.open();
 		while (threadGate.waiters < actualThreadNum)
 			Thread.yield();
+		// traceRows(0, screen.height);
 	}
 
 	Vec!4 trace(Ray ray, uint depth) {
