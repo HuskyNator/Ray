@@ -1,4 +1,5 @@
 module raytracer;
+import arrayqueue;
 import bvh;
 import core.atomic;
 import core.sync.semaphore;
@@ -73,6 +74,7 @@ struct RayTracer {
 		uint[2][] threadParams;
 		Gate threadGate;
 		shared uint atomicInt = 0;
+		static ArrayQueue!BoundingBox boxQueue;
 
 		float virtualPlaneZ;
 		float verticalFrac;
@@ -128,6 +130,7 @@ struct RayTracer {
 		threads[id] = Thread.getThis();
 		uint start = threadParams[id][0];
 		uint end = threadParams[id][1];
+		boxQueue = ArrayQueue!BoundingBox(4);
 
 		// TODO Figure out how to end thread without creating `shouldStop` boolean (aka: kill it)
 		while (true) {
@@ -182,11 +185,11 @@ struct RayTracer {
 		ulong hitID = 0;
 
 		if (useBVH) {
-			BoundingBox[] testBoxes = [scene.bvh.tree[0]];
+			boxQueue.clear();
+			boxQueue.add(scene.bvh.tree[0]);
 
-			while (testBoxes.length > 0) {
-				BoundingBox box = testBoxes[0];
-				testBoxes = testBoxes[1 .. $];
+			while (boxQueue.length > 0) {
+				BoundingBox box = boxQueue.pop();
 
 				if (hitsBoundingBox(ray, box)) {
 					if (box.isLeaf) {
@@ -198,8 +201,8 @@ struct RayTracer {
 							}
 						}
 					} else {
-						testBoxes ~= scene.bvh.tree[box.leftChild];
-						testBoxes ~= scene.bvh.tree[box.rightChild];
+						boxQueue.add(scene.bvh.tree[box.leftChild]);
+						boxQueue.add(scene.bvh.tree[box.rightChild]);
 					}
 				}
 			}
