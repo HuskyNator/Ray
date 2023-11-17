@@ -79,11 +79,9 @@ struct BoundingBox {
 
 // Zou ook kunnen sorteren langs alle 3 de assen & vervolgens niet meer hoeven te sorteren.
 struct BVH {
-	// TODO
-	static const uint MIN_IN_BOX = 4;
-	static const uint BINS = 4; // 1 = no binning: equal split.
-
 	BoundingBox[] tree;
+	uint minInBox = 4;
+	uint binCount = 4; // 1 = no binning: equal split.
 
 	bool initialized() {
 		return tree.length > 0;
@@ -103,9 +101,9 @@ struct BVH {
 		return cast(string) str;
 	}
 
-	this(ref uint[3][] indices, const Vec!3[] positions, bool minInBox, uint bins) {
-		this.MIN_IN_BOX = minInBox;
-		this.BINS = bins;
+	this(ref uint[3][] indices, const Vec!3[] positions, uint minInBox, uint bins) {
+		this.minInBox = minInBox;
+		this.binCount = bins;
 		assert(indices.length > 0);
 		assert(indices.length < uint.max);
 		Centroid[] centroids = [];
@@ -140,11 +138,11 @@ struct BVH {
 	}
 
 	void buildTree(ref BoundingBox box, Centroid[][3] allCentroids) {
-		if (box.indexCount <= MIN_IN_BOX) // Don't split with too few elements
+		if (box.indexCount <= minInBox) // Don't split with too few elements
 			return;
 
 		SplitBox boxes = splitBox(box, allCentroids);
-		// static if (BINS > 1)
+		// static if (binCount > 1)
 		if (boxes.area >= box.area()) // Should only split when this creates improvement (when binning).
 			return;
 
@@ -177,8 +175,8 @@ struct BVH {
 		// Find optimal axis
 		SplitBox splitBoxI;
 		static foreach (i; 0 .. 3) {
-			if (BINS > 1)
-				splitBoxI = splitBoxAxisBins!i(parent, axisCentroids[i]);
+			if (binCount > 1)
+				splitBoxI = splitBoxAxisBins!i(parent, axisCentroids[i], binCount);
 			else
 				splitBoxI = splitBoxAxis!i(parent, axisCentroids[i]);
 			if (splitBoxI.area < splitBox.area) {
@@ -203,7 +201,7 @@ struct BVH {
 	/// Splits into 2 ~equal parts, by number of contained centroids.
 	private static SplitBox splitBoxAxis(ubyte axis)(const BoundingBox parent, Centroid[] centroids) {
 		static assert(axis >= 0 && axis <= 2);
-		// assert(centroids.length > MIN_IN_BOX);
+		// assert(centroids.length > minInBox);
 		assert(centroids.length < uint.max);
 		uint half = cast(uint) centroids.length / 2;
 
@@ -246,14 +244,14 @@ struct BVH {
 
 	/// Split centroids along axis & determine bounding boxes.
 	/// Splits along bin-edge that minimizes bounding areas.
-	private static SplitBox splitBoxAxisBins(ubyte axis)(const BoundingBox parent, Centroid[] centroids) {
+	private static SplitBox splitBoxAxisBins(ubyte axis)(const BoundingBox parent, Centroid[] centroids, uint binCount) {
 		sort!(sortPredicate!axis())(centroids); // full sort along axis. (may be able to do better using topN)
 
 		SplitBox minSplit;
 		minSplit.area = float.max;
-		float binWidth = (parent.high[axis] - parent.low[axis]) / BINS;
+		float binWidth = (parent.high[axis] - parent.low[axis]) / binCount;
 
-		foreach (uint bin; 0 .. BINS - 1) { // skip last bin edge (corresponds to non-split)
+		foreach (uint bin; 0 .. binCount - 1) { // skip last bin edge (corresponds to non-split)
 			// Find centroid count of left split.
 			float binEnd = parent.low[axis] + (bin + 1) * binWidth;
 			uint leftCentroidCount = 0;

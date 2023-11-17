@@ -21,36 +21,38 @@ struct Scene {
 	RayCamera camera;
 	Light[] lights;
 
-	BVH bvh;
-
 	uint[3][] indices;
 	Vec!3[] positions;
 	Vec!3[] normals; // per vertex -> otherwise normalmap or parallex mapping et cetera
-	Vec!3[] triangleNormals;
 	Vec!4[] colors; // UV's to be + textures.
 	Vec!4 backgroundColor; // environment map?
 
-	void prepare(bool useBVH) {
-		if (useBVH && !bvh.initialized)
-			calculateBVH();
-		else if (triangleNormals.length == 0)
-			calculateNormals();
+	Vec!3[] triangleNormals;
+	BVH bvh;
+
+	this(RayCamera camera, Light[] lights, uint[3][] indices, Vec!3[] positions, Vec!3[] normals,
+		Vec!4[] colors, Vec!4 backgroundColor, uint minInBox, uint binCount) {
+		this.camera = camera;
+		this.lights = lights.dup;
+		this.indices = indices.dup;
+		this.positions = positions.dup;
+		this.normals = normals.dup;
+		this.colors = colors.dup;
+		this.backgroundColor = backgroundColor;
+
+		calculateBVH(minInBox, binCount);
+		calculateNormals();
 	}
 
-	/// Creates BVH & Recalculates normals
-	void calculateBVH() {
-		this.bvh = BVH(indices, positions);
-		calculateNormals();
+	void calculateBVH(uint minInBox, uint binCount) {
+		this.bvh = BVH(indices, positions, minInBox, binCount);
 	}
 
 	void calculateNormals() {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [
-				positions[triangle[0]], positions[triangle[1]],
-				positions[triangle[2]]
-			];
+			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
 	}
@@ -68,24 +70,26 @@ struct Ray {
 
 struct RayTracer {
 	uint maxDepth; // TODO
-	bool useBVH;
 	Scene scene;
 	Screen screen;
 
 	private {
 		Thread[] threads;
-		uint[2][] threadParams;
-		Gate threadGate;
-		shared uint atomicInt = 0;
-		static ArrayQueue!BoundingBox boxQueue;
+		shared uint[2][] threadParams;
 
+		shared uint actualThreadNum;
+		Gate threadGate;
+
+		shared uint threadCounter = 0;
+		shared bool DIE = false;
+
+		bool useBVH;
 		float virtualPlaneZ;
 		float verticalFrac;
 		float widthFrac;
 		float heightFrag;
 
-		uint actualThreadNum;
-		bool DIE = false;
+		static ArrayQueue!BoundingBox boxQueue;
 	}
 
 	~this() {
@@ -97,9 +101,8 @@ struct RayTracer {
 
 	/// Params:
 	///   maxDepth = The max reflection depth
-	this(Scene scene, Screen screen, bool useBVH, uint maxDepth) {
+	this(Scene scene, Screen screen, uint maxDepth) {
 		this.maxDepth = maxDepth;
-		this.useBVH = useBVH;
 		this.scene = scene;
 		this.screen = screen;
 
@@ -127,7 +130,7 @@ struct RayTracer {
 	}
 
 	void threadTrace() {
-		uint id = atomicFetchAdd(atomicInt, 1);
+		uint id = atomicFetchAdd(threadCounter, 1);
 		threads[id] = Thread.getThis();
 		uint start = threadParams[id][0];
 		uint end = threadParams[id][1];
@@ -163,11 +166,11 @@ struct RayTracer {
 		screen.setPixel(x, y, color);
 	}
 
-	void trace() {
+	void trace(bool useBVH) {
 		import std.math;
 		import std.parallelism;
 
-		scene.prepare(useBVH);
+		this.useBVH = useBVH;
 
 		this.virtualPlaneZ = -1.0f / tan(scene.camera.fov / 2.0f);
 		this.verticalFrac = cast(float) screen.height / cast(float) screen.width;
@@ -194,8 +197,7 @@ struct RayTracer {
 
 				if (hitsBoundingBox(ray, box)) {
 					if (box.isLeaf) {
-						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
-							i++) {
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
 							float dist = intersectTriangle(ray, i);
 							if (dist < closest && dist > 0) {
 								closest = dist;
@@ -267,9 +269,7 @@ struct RayTracer {
 		if (dist < 0)
 			return -1;
 		Vec!3 point = ray.org + ray.dir * dist;
-		Vec!3[3] positions = [
-			pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]
-		];
+		Vec!3[3] positions = [pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]];
 		Vec!3 barycentric = calcBarycentric(positions, normal, point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point); // TODO choose
 		static foreach (i; 0 .. 3)
@@ -354,8 +354,7 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
-		const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -376,8 +375,7 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
-			verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 

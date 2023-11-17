@@ -26,7 +26,7 @@ void main(string[] args) {
 		Window.setStandardVisible(false);
 	Window window = new Window("Ray", width, height);
 	window.setBackgroundColor(Vec!4(0, 0, 0.5, 1));
-	GltfReader gltfReader = new GltfReader("cube.gltf");
+	GltfReader gltfReader = new GltfReader("teapot.gltf");
 	GltfMesh mesh = gltfReader.meshes[0][0];
 
 	World world = new World();
@@ -38,16 +38,18 @@ void main(string[] args) {
 	RayCamera camera = new RayCamera(degreesToRadians(90.0f)); // Actual raytracing outside of framework.
 	world.cameras ~= camera;
 
-	Scene scene = {
-		camera: camera, lights: [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))], indices: mesh.index.attr.getContent!3()
-			.dup, positions: (cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0
-				.. mesh.attributeSet.position.elementCount].dup, normals: (
-				cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount].dup,
-		colors: (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0 .. mesh.attributeSet.color[0].elementCount]
-			.dup, backgroundColor: Vec!4(0, 0.8, 0, 1),
-	};
+	uint minInBox = 4;
+	uint binCount = 4;
+	bool useBVH = true;
 
-	RayTracer rayTracer = RayTracer(scene, screen, true, 1);
+	Scene scene = Scene(camera, [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))],
+		mesh.index.attr.getContent!3(),
+		(cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh.attributeSet.position.elementCount],
+		(cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount],
+		(cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0 .. mesh.attributeSet.color[0].elementCount],
+		Vec!4(0, 0.8, 0, 1), minInBox, binCount);
+
+	RayTracer rayTracer = RayTracer(scene, screen, 1);
 
 	Speler speler = new Speler();
 	world.addNode(speler);
@@ -64,18 +66,18 @@ void main(string[] args) {
 		auto shell = executeShell("git rev-parse --short HEAD");
 		string commitName = (shell.status == 0) ? lineSplitter(shell.output).front : "Unknown";
 
-		rayTracer.trace();
+		rayTracer.trace(useBVH);
 		screen.texture.saveImage(logPath ~ commitName ~ ".jpg");
 
 		string performancePath = logPath ~ "performance.txt";
 		if (!exists(performancePath))
 			File(performancePath, "w").writeln("Previous commit : seconds/frame");
-		float frameTime = cast(float) benchmark!(() { rayTracer.trace(); })(10)[0].total!"usecs";
+		float frameTime = cast(float) benchmark!(() { rayTracer.trace(useBVH); })(10)[0].total!"usecs";
 		frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
 		File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
 	} else
 		while (!vdShouldClose()) {
-			rayTracer.trace();
+			rayTracer.trace(useBVH);
 			vdStep();
 			// writeln("FPS: " ~ vdFps().to!string);
 		}
