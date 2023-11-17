@@ -47,7 +47,10 @@ struct Scene {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
+			Vec!3[3] pos = [
+				positions[triangle[0]], positions[triangle[1]],
+				positions[triangle[2]]
+			];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
 	}
@@ -86,10 +89,8 @@ struct RayTracer {
 	}
 
 	~this() {
-		while (threadGate.waiters < actualThreadNum)
-			Thread.yield();
 		atomicStore(DIE, true);
-		threadGate.open();
+		threadGate.setAlwaysOpen(true);
 		foreach (Thread t; threads)
 			t.join();
 	}
@@ -107,7 +108,7 @@ struct RayTracer {
 		immutable uint loss = screen.height % threadNum;
 		this.actualThreadNum = threadNum + ((loss > 0) ? 1 : 0); // TODO BUGREPORT ZONDER HAAKJES
 
-		this.threads = new Thread[actualThreadNum];
+		this.threads.reserve(actualThreadNum);
 		this.threadGate = new Gate();
 
 		foreach (uint t; 0 .. threadNum) {
@@ -193,7 +194,8 @@ struct RayTracer {
 
 				if (hitsBoundingBox(ray, box)) {
 					if (box.isLeaf) {
-						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
+							i++) {
 							float dist = intersectTriangle(ray, i);
 							if (dist < closest && dist > 0) {
 								closest = dist;
@@ -265,7 +267,9 @@ struct RayTracer {
 		if (dist < 0)
 			return -1;
 		Vec!3 point = ray.org + ray.dir * dist;
-		Vec!3[3] positions = [pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]];
+		Vec!3[3] positions = [
+			pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]
+		];
 		Vec!3 barycentric = calcBarycentric(positions, normal, point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point); // TODO choose
 		static foreach (i; 0 .. 3)
@@ -350,7 +354,8 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
+		const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -371,7 +376,8 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
+			verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 

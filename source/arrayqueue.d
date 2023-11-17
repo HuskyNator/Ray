@@ -33,7 +33,9 @@ struct ArrayQueue(T) {
 	}
 
 	void add(T element) {
-		if (_array.capacity == _length)
+		if (_array.capacity == 0)
+			grow(4);
+		else if (_array.capacity == _length)
 			grow(2 * _array.capacity);
 		this._length += 1;
 		this._array[tail()] = element;
