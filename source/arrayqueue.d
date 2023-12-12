@@ -64,7 +64,7 @@ struct ArrayQueue(T) {
 		if (_length == 1) // empty ArrayQueue
 			this._head = 0;
 		else // next element exists
-			this._head += 1;
+			this._head = (_head + 1)%_capacity; //TODO is this fic
 		this._length -= 1;
 		return element;
 	}
