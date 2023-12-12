@@ -3,8 +3,7 @@ import vertexd.mesh;
 import vertexd.core;
 import vertexd.world;
 import vertexd.shaders.shaderprogram;
-import simple_texture;
-import vertexd.shaders.sampler;
+import vertexd.shaders;
 import bindbc.opengl : GLint;
 
 class Quad : Mesh {
@@ -66,17 +65,16 @@ final class Screen : Node {
 		this.sampler = new Sampler(""); // Standard Sampler (neareast).
 		this.handle = new BindlessTexture(texture, sampler);
 
-		texture.allocate(false, false);
-		handle.allocate();
+		handle.initialize(false, false);
 		handle.load();
 	}
 
 	void setPixel(uint x, uint y, Vec!4 color) {
 		import std.algorithm : clamp;
 
-		ubyte[4] pixel;
-		foreach (i; 0 .. 4)
-			pixel[i] = cast(ubyte)(color[i].clamp(0.0f, 1.0f) * 255);
+		Vec!(4,ubyte) pixel;
+		foreach (i, float e; color)
+			pixel[i] = cast(ubyte) (e.clamp(0.0f, 1.0f - float.min_normal) * 256); //TODO 255? -min
 		texture.pixels[width * y + x] = pixel;
 	}
 
