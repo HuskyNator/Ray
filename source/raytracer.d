@@ -9,8 +9,7 @@ import raycam;
 import screen;
 import std.algorithm : max, min;
 import std.parallelism : totalCPUs;
-import vertexd.core;
-import vertexd.misc;
+import vertexd;
 
 float u_occlusion = .1;
 float u_diffuse = .7;
@@ -24,20 +23,65 @@ struct Scene {
 	uint[3][] indices;
 	Vec!3[] positions;
 	Vec!3[] normals; // per vertex -> otherwise normalmap or parallex mapping et cetera
-	Vec!4[] colors; // UV's to be + textures.
+
+	struct Colors {
+		bool useMaterial;
+		union {
+			Vec!4[] vertexColors;
+			struct {
+				Vec!2[] uvs;
+				Material material;
+			}
+		}
+	}
+
+	Colors colors;
 	Vec!4 backgroundColor; // environment map?
+
+	Vec!4 getColor(uint index) {
+		if (colors.useMaterial) {
+			Vec!2 uv = colors.uvs[index];
+			return colors.material.baseColor_texture.base.sampleTexture(uv);
+		} else {
+			return colors.vertexColors[index];
+		}
+	}
 
 	Vec!3[] triangleNormals;
 	BVH bvh;
 
+	this(RayCamera camera, Light[] lights, GltfMesh mesh, Vec!4 backgroundColor, uint minInBox, uint binCount) {
+		Colors meshColors;
+		colors.useMaterial = mesh.material.normal_texture !is null;
+		if (!colors.useMaterial) {
+			assert(mesh.attributeSet.color[0].present());
+			colors.vertexColors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
+				.. mesh.attributeSet.color[0].elementCount].dup;
+		} else {
+			assert(mesh.material.baseColor_texture !is null);
+			Mesh.Attribute uvs = mesh.attributeSet.texCoord[mesh.material.baseColor_texture.texCoord];
+			assert(uvs.present());
+			colors.uvs = (cast(Vec!2*) uvs.content.ptr)[0 .. uvs.elementCount].dup;
+			colors.material = mesh.material;
+		}
+
+		this(camera, lights, mesh.index.attr.getContent!3(),
+			(cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh.attributeSet.position.elementCount],
+			(cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount],
+			meshColors, backgroundColor, minInBox, binCount);
+	}
+
 	this(RayCamera camera, Light[] lights, uint[3][] indices, Vec!3[] positions, Vec!3[] normals,
-		Vec!4[] colors, Vec!4 backgroundColor, uint minInBox, uint binCount) {
+		Scene.Colors colors, Vec!4 backgroundColor, uint minInBox, uint binCount) {
 		this.camera = camera;
-		this.lights = lights.dup;
+		this.lights = lights;
+
+		// duplicated as they may be changed.
 		this.indices = indices.dup;
 		this.positions = positions.dup;
 		this.normals = normals.dup;
-		this.colors = colors.dup;
+
+		this.colors = colors;
 		this.backgroundColor = backgroundColor;
 
 		calculateBVH(minInBox, binCount);
@@ -69,79 +113,88 @@ struct Ray {
 }
 
 struct RayTracer {
-	uint maxDepth; // TODO
-	Scene scene;
 	Screen screen;
 
 	private {
-		Thread[] threads;
-		shared uint[2][] threadParams;
+		debug (single_thread) {
+		} else {
+			Thread[] threads;
+			shared uint[2][] threadParams;
 
-		shared uint actualThreadNum;
-		Gate threadGate;
+			shared uint actualThreadNum;
+			Gate threadGate;
 
-		shared uint threadCounter = 0;
-		shared bool DIE = false;
+			shared uint threadCounter = 0;
+			shared bool DIE = false;
+		}
 
-		bool useBVH;
 		float virtualPlaneZ;
 		float verticalFrac;
 		float widthFrac;
 		float heightFrag;
 
+		bool useBVH;
+		uint maxDepth;
+		Scene scene;
+
 		static ArrayQueue!BoundingBox boxQueue;
 	}
 
-	~this() {
-		atomicStore(DIE, true);
-		threadGate.setAlwaysOpen(true);
-		foreach (Thread t; threads)
-			t.join();
+	debug (single_thread) {
+	} else {
+		~this() {
+			atomicStore(DIE, true);
+			threadGate.setAlwaysOpen(true);
+			foreach (Thread t; threads)
+				t.join();
+		}
 	}
 
-	/// Params:
-	///   maxDepth = The max reflection depth
-	this(Scene scene, Screen screen, uint maxDepth) {
-		this.maxDepth = maxDepth;
-		this.scene = scene;
+	this(Screen screen) {
 		this.screen = screen;
 
-		immutable uint threadNum = max(1, totalCPUs - 1);
-		immutable uint perThread = screen.height / threadNum;
-		immutable uint loss = screen.height % threadNum;
-		this.actualThreadNum = threadNum + ((loss > 0) ? 1 : 0); // TODO BUGREPORT ZONDER HAAKJES
+		debug (single_thread) {
+		} else {
+			immutable uint threadNum = max(1, totalCPUs - 1);
+			immutable uint perThread = screen.height / threadNum;
+			immutable uint loss = screen.height % threadNum;
+			this.actualThreadNum = threadNum + ((loss > 0) ? 1 : 0); // TODO BUGREPORT ZONDER HAAKJES
 
-		this.threads.reserve(actualThreadNum);
-		this.threadGate = new Gate();
+			this.threads.reserve(actualThreadNum);
+			this.threadGate = new Gate();
 
-		foreach (uint t; 0 .. threadNum) {
-			threadParams ~= [t * perThread, (t + 1) * perThread];
-			new Thread(&threadTrace).start();
+			foreach (uint t; 0 .. threadNum) {
+				threadParams ~= [t * perThread, (t + 1) * perThread];
+				new Thread(&threadTrace).start();
+			}
+
+			if (loss > 0) {
+				threadParams ~= [screen.height - loss, screen.height];
+				new Thread(&threadTrace).start();
+			}
+
+			// Wait for threads to initialize & reach the gate.
+			while (threadGate.waiters < actualThreadNum)
+				Thread.yield();
 		}
-
-		if (loss > 0) {
-			threadParams ~= [screen.height - loss, screen.height];
-			new Thread(&threadTrace).start();
-		}
-
-		// Wait for threads to initialize & reach the gate.
-		while (threadGate.waiters < actualThreadNum)
-			Thread.yield();
 	}
 
-	void threadTrace() {
-		uint id = atomicFetchAdd(threadCounter, 1);
-		threads[id] = Thread.getThis();
-		uint start = threadParams[id][0];
-		uint end = threadParams[id][1];
-		boxQueue = ArrayQueue!BoundingBox(4);
+	debug (single_thread) {
+	} else {
+		void threadTrace() {
+			uint id = atomicFetchAdd(threadCounter, 1);
+			threads[id] = Thread.getThis();
+			uint start = threadParams[id][0];
+			uint end = threadParams[id][1];
+			boxQueue = ArrayQueue!BoundingBox(4);
 
-		// TODO Figure out how to end thread without creating `shouldStop` boolean (aka: kill it)
-		while (true) {
-			threadGate.wait();
-			if (atomicLoad(DIE))
-				break;
-			traceRows(start, end);
+			// TODO Figure out how to end thread without creating `shouldStop` boolean (aka: kill it)
+			while (true) {
+				threadGate.wait();
+				if (atomicLoad(DIE))
+					break;
+				traceRows(start, end);
+			}
 		}
 	}
 
@@ -166,10 +219,12 @@ struct RayTracer {
 		screen.setPixel(x, y, color);
 	}
 
-	void trace(bool useBVH) {
+	void trace(Scene scene, uint maxDepth, bool useBVH) {
 		import std.math;
 		import std.parallelism;
 
+		this.scene = scene;
+		this.maxDepth = maxDepth;
 		this.useBVH = useBVH;
 
 		this.virtualPlaneZ = -1.0f / tan(scene.camera.fov / 2.0f);
@@ -178,10 +233,13 @@ struct RayTracer {
 		this.widthFrac = 1.0f / cast(float) screen.width;
 		this.heightFrag = 1.0f / cast(float) screen.height;
 
-		threadGate.open();
-		while (threadGate.waiters < actualThreadNum)
-			Thread.yield();
-		// traceRows(0, screen.height);
+		debug (single_thread) {
+			traceRows(0, screen.height);
+		} else {
+			threadGate.open();
+			while (threadGate.waiters < actualThreadNum)
+				Thread.yield();
+		}
 	}
 
 	Vec!4 trace(Ray ray, uint depth) {
@@ -222,7 +280,7 @@ struct RayTracer {
 
 		if (closest == float.max) // no hit
 			return scene.backgroundColor;
-		return scene.colors[scene.indices[hitID][0]]; // TODO
+		return scene.getColor(scene.indices[hitID][0]);
 	}
 
 	static bool hitsBoundingBox(const Ray ray, const BoundingBox box) {
