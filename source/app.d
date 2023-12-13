@@ -43,10 +43,10 @@ void main(string[] args) {
 	uint binCount = 4;
 	bool useBVH = true;
 
-	// Scene scene = Scene(camera, [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))], mesh, Vec!4(0, 0.8, 0,
-	// 1), minInBox, binCount);
+	Scene scene = Scene(camera, [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))], mesh, Vec!4(0, 0.8, 0,
+			1), minInBox, binCount);
 
-	// RayTracer rayTracer = RayTracer(screen);
+	RayTracer rayTracer = RayTracer(screen);
 
 	Speler speler = new Speler();
 	world.addNode(speler);
@@ -56,45 +56,31 @@ void main(string[] args) {
 	speler.location = Vec!3(0, 0, 4);
 	speler.addAttribute(camera);
 
-	vdStep();
-	import gamut;
-	import vertexd;
+	vdStep(); // Needs to be done before render.
+	if (RENDER_IMAGE) {
+		string logPath = ".." ~ dirSeparator ~ "logs" ~ dirSeparator;
+		mkdirRecurse(logPath);
+		auto shell = executeShell("git rev-parse --short HEAD");
+		string commitName = (shell.status == 0) ? lineSplitter(shell.output).front : "Unknown";
 
-	Texture tex = new Texture("Default_normal.jpg");
-	// tex.saveImage("../logs/image.jpg");
-	foreach (x; 0 .. screen.width)
-		foreach (y; 0 .. screen.height)
-			{Vec!4 p = tex.sampleTexture(Vec!2(x, y));
-			p[3] = 1;
-				screen.setPixel(x, y, p);}
+		rayTracer.trace(scene, 1, useBVH);
+		screen.texture.saveImage(logPath ~ commitName ~ ".jpg");
+		copy(logPath ~ commitName ~ ".jpg", logPath ~ "image.jpg");
 
-	screen.texture.saveImage("../logs/image.jpg");
-	vdLoop();
-	// screen.se
-
-	// vdStep(); // Needs to be done before render.
-	// if (RENDER_IMAGE) {
-	// 	string logPath = ".." ~ dirSeparator ~ "logs" ~ dirSeparator;
-	// 	mkdirRecurse(logPath);
-	// 	auto shell = executeShell("git rev-parse --short HEAD");
-	// 	string commitName = (shell.status == 0) ? lineSplitter(shell.output).front : "Unknown";
-
-	// 	rayTracer.trace(scene, 1, useBVH);
-	// 	screen.texture.saveImage(logPath ~ commitName ~ ".jpg");
-	// 	copy(logPath ~ commitName ~ ".jpg", logPath ~ "image.jpg");
-
-	// 	string performancePath = logPath ~ "performance.txt";
-	// 	if (!exists(performancePath))
-	// 		File(performancePath, "w").writeln("Previous commit : seconds/frame");
-	// 	float frameTime = cast(float) benchmark!(() { rayTracer.trace(scene, 1, useBVH); })(10)[0].total!"usecs";
-	// 	frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
-	// 	File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
-	// } else
-	// 	while (!vdShouldClose()) {
-	// 		rayTracer.trace(scene, 1, useBVH);
-	// 		vdStep();
-	// 		// writeln("FPS: " ~ vdFps().to!string);
-	// 	}
+		// string performancePath = logPath ~ "performance.txt";
+		// if (!exists(performancePath))
+		// 	File(performancePath, "w").writeln("Previous commit : seconds/frame");
+		// float frameTime = cast(float) benchmark!(() {
+		// 	rayTracer.trace(scene, 1, useBVH);
+		// })(10)[0].total!"usecs";
+		// frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
+		// File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
+	} else
+		while (!vdShouldClose()) {
+			rayTracer.trace(scene, 1, useBVH);
+			vdStep();
+			// writeln("FPS: " ~ vdFps().to!string);
+		}
 	// import std.random : uniform;
 	// import vertexd.misc;
 

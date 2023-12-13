@@ -55,14 +55,14 @@ struct Scene {
 		colors.useMaterial = mesh.material.normal_texture !is null;
 		if (!colors.useMaterial) {
 			assert(mesh.attributeSet.color[0].present());
-			colors.vertexColors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
+			meshColors.vertexColors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
 				.. mesh.attributeSet.color[0].elementCount].dup;
 		} else {
 			assert(mesh.material.baseColor_texture !is null);
 			Mesh.Attribute uvs = mesh.attributeSet.texCoord[mesh.material.baseColor_texture.texCoord];
 			assert(uvs.present());
-			colors.uvs = (cast(Vec!2*) uvs.content.ptr)[0 .. uvs.elementCount].dup;
-			colors.material = mesh.material;
+			meshColors.uvs = (cast(Vec!2*) uvs.content.ptr)[0 .. uvs.elementCount].dup;
+			meshColors.material = mesh.material;
 		}
 
 		this(camera, lights, mesh.index.attr.getContent!3(),
