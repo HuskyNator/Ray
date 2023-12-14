@@ -11,6 +11,7 @@ struct ArrayQueue(T) {
 
 	this(size_t capacity) {
 		this._array = new T[capacity];
+		_array.length = capacity;
 		this._capacity = capacity;
 	}
 
@@ -51,9 +52,11 @@ struct ArrayQueue(T) {
 	private void grow(size_t newCapacity) {
 		// Allocate
 		T[] newArray = new T[newCapacity];
+		newArray.length = newCapacity;
+		newArray[0 .. _length] = array();
 		this._capacity = newCapacity;
 		// Move old data
-		newArray[0 .. _length] = array();
+		newArray.length = newCapacity;
 		this._head = 0;
 		this._array = newArray;
 	}
@@ -64,7 +67,7 @@ struct ArrayQueue(T) {
 		if (_length == 1) // empty ArrayQueue
 			this._head = 0;
 		else // next element exists
-			this._head = (_head + 1)%_capacity; //TODO is this fic
+			this._head = (_head + 1) % _capacity;
 		this._length -= 1;
 		return element;
 	}
@@ -72,7 +75,9 @@ struct ArrayQueue(T) {
 	void clear(bool freeArray = false) {
 		this._length = 0;
 		this._head = 0;
-		if (freeArray)
+		if (freeArray) {
+			this._capacity = 0;
 			this._array = [];
+		}
 	}
 }

@@ -64,8 +64,8 @@ void main(string[] args) {
 		string commitName = (shell.status == 0) ? lineSplitter(shell.output).front : "Unknown";
 
 		rayTracer.trace(scene, 1, useBVH);
-		screen.texture.saveImage(logPath ~ commitName ~ ".jpg");
-		copy(logPath ~ commitName ~ ".jpg", logPath ~ "image.jpg");
+		screen.texture.saveImage(logPath ~ commitName ~ ".png");
+		copy(logPath ~ commitName ~ ".png", logPath ~ "image.png");
 
 		// string performancePath = logPath ~ "performance.txt";
 		// if (!exists(performancePath))

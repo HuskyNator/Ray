@@ -74,7 +74,7 @@ final class Screen : Node {
 
 		Vec!(4,ubyte) pixel;
 		foreach (i, float e; color)
-			pixel[i] = cast(ubyte) (e.clamp(0.0f, 1.0f - float.min_normal) * 256); //TODO 255? -min
+			pixel[i] = cast(ubyte) (e.clamp(0.0f, 1.0f - float.min_normal) * 255.0f); //TODO 255? -min
 		texture.pixels[width * y + x] = pixel;
 	}
 
