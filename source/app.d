@@ -20,9 +20,11 @@ void main(string[] args) {
 	uint height = 1080 / 2;
 
 	const bool RENDER_IMAGE = (args.length > 1 && args[1] == "image");
+	const bool PROFILE = (args.length > 1 && args[1] == "profile");
+	const uint PROFILE_COUNT = (PROFILE && args.length > 2) ? args[2].to!uint : 8;
 
 	vdInit();
-	if (RENDER_IMAGE)
+	if (RENDER_IMAGE || PROFILE)
 		Window.setStandardVisible(false);
 	Window window = new Window("Ray", width, height);
 	window.setBackgroundColor(Vec!4(0, 0, 0.5, 1));
@@ -39,8 +41,8 @@ void main(string[] args) {
 	RayCamera camera = new RayCamera(degreesToRadians(90.0f)); // Actual raytracing outside of framework.
 	world.cameras ~= camera;
 
-	uint minInBox = 20;
-	uint binCount = 4;
+	uint minInBox = 5;
+	uint binCount = 1;
 	bool useBVH = true;
 
 	Scene scene = Scene(camera, [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))], mesh, Vec!4(0, 0.8, 0,
@@ -57,24 +59,33 @@ void main(string[] args) {
 	speler.addAttribute(camera);
 
 	vdStep(); // Needs to be done before render.
-	if (RENDER_IMAGE) {
+
+	if (RENDER_IMAGE || PROFILE) {
 		string logPath = ".." ~ dirSeparator ~ "logs" ~ dirSeparator;
 		mkdirRecurse(logPath);
 		auto shell = executeShell("git rev-parse --short HEAD");
 		string commitName = (shell.status == 0) ? lineSplitter(shell.output).front : "Unknown";
 
-		rayTracer.trace(scene, 1, useBVH);
-		screen.texture.saveImage(logPath ~ commitName ~ ".png");
-		copy(logPath ~ commitName ~ ".png", logPath ~ "image.png");
+		string performancePath = logPath ~ "performance.txt";
+		if (!exists(performancePath))
+			std.file.write(performancePath, "Previous commit : seconds/frame\n");
 
-		// string performancePath = logPath ~ "performance.txt";
-		// if (!exists(performancePath))
-		// 	File(performancePath, "w").writeln("Previous commit : seconds/frame");
-		// float frameTime = cast(float) benchmark!(() {
-		// 	rayTracer.trace(scene, 1, useBVH);
-		// })(10)[0].total!"usecs";
-		// frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
-		// File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
+		if (RENDER_IMAGE) {
+			StopWatch watch = StopWatch(AutoStart.yes);
+			rayTracer.trace(scene, 1, useBVH);
+			watch.stop();
+
+			screen.texture.saveImage(logPath ~ commitName ~ ".png");
+			copy(logPath ~ commitName ~ ".png", logPath ~ "image.png");
+
+			float frameTime = (cast(float) watch.peek().total!"usecs") / 1_000_000.0f;
+			append(performancePath, commitName ~ ':' ~ frameTime.to!string ~ '\n');
+		}
+		if (PROFILE) {
+			Duration performanceDur = benchmark!(() { rayTracer.trace(scene, 1, useBVH); })(PROFILE_COUNT)[0];
+			float performance = (cast(float) performanceDur.total!"usecs") / 1_000_000.0f / PROFILE_COUNT;
+			append(performancePath, commitName ~ ':' ~ performance.to!string ~ '\n');
+		}
 	} else
 		while (!vdShouldClose()) {
 			rayTracer.trace(scene, 1, useBVH);

@@ -142,9 +142,9 @@ struct BVH {
 			return;
 
 		SplitBox boxes = splitBox(box, allCentroids);
-		// static if (binCount > 1)
-		if (boxes.area >= box.area()) // Should only split when this creates improvement (when binning).
-			return;
+
+		if (boxes.left.indexCount == 0 || boxes.right.indexCount == 0)
+			return; // Should only split when this creates improvement (when binning).
 
 		// split
 		assert(tree.length < (cast(ulong) uint.max) + 2);
