@@ -38,12 +38,19 @@ struct Scene {
 	Colors colors;
 	Vec!4 backgroundColor; // environment map?
 
-	Vec!4 getColor(uint index) {
+	Vec!4 getColor(ulong triangleIndex, Vec!3 barycentric) {
+		uint[3] triangle = indices[triangleIndex];
 		if (colors.useMaterial) {
-			Vec!2 uv = colors.uvs[index];
-			return colors.material.baseColor_texture.base.sampleTexture(uv);
+			Vec!2 uv = Vec!2(0);
+			foreach (i; 0 .. 3) {
+				uv += (colors.uvs[triangle[i]] % Vec!2(1, 1)) * barycentric[i];
+			}
+			return colors.material.baseColor_texture.base.sampleTexture(uv) * colors.material.baseColor_factor;
 		} else {
-			return colors.vertexColors[index];
+			Vec!4 color = Vec!4(0);
+			static foreach (i; 0 .. 3)
+				color += colors.vertexColors[triangle[i]] * barycentric[i];
+			return color;
 		}
 	}
 
@@ -52,8 +59,8 @@ struct Scene {
 
 	this(RayCamera camera, Light[] lights, GltfMesh mesh, Vec!4 backgroundColor, uint minInBox, uint binCount) {
 		Colors meshColors;
-		colors.useMaterial = mesh.material.normal_texture !is null;
-		if (!colors.useMaterial) {
+		meshColors.useMaterial = mesh.material.baseColor_texture !is null;
+		if (!meshColors.useMaterial) {
 			assert(mesh.attributeSet.color[0].present());
 			meshColors.vertexColors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
 				.. mesh.attributeSet.color[0].elementCount].dup;
@@ -243,8 +250,8 @@ struct RayTracer {
 	}
 
 	Vec!4 trace(Ray ray, uint depth) {
-		float closest = float.max;
-		ulong hitID = 0;
+		TriangleIntersection closestIntersection;
+		closestIntersection.distance = float.max;
 
 		if (useBVH) {
 			boxQueue.clear();
@@ -256,10 +263,9 @@ struct RayTracer {
 				if (hitsBoundingBox(ray, box)) {
 					if (box.isLeaf) {
 						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
-							float dist = intersectTriangle(ray, i);
-							if (dist < closest && dist > 0) {
-								closest = dist;
-								hitID = i;
+							TriangleIntersection intersect = intersectTriangle(ray, i);
+							if (intersect.distance < closestIntersection.distance && intersect.distance > 0) {
+								closestIntersection = intersect;
 							}
 						}
 					} else {
@@ -270,17 +276,16 @@ struct RayTracer {
 			}
 		} else {
 			foreach (i; 0 .. scene.indices.length) {
-				float dist = intersectTriangle(ray, i);
-				if (dist < closest && dist > 0) {
-					closest = dist;
-					hitID = i;
+				TriangleIntersection intersect = intersectTriangle(ray, i);
+				if (intersect.distance < closestIntersection.distance && intersect.distance > 0) {
+					closestIntersection = intersect;
 				}
 			}
 		}
 
-		if (closest == float.max) // no hit
+		if (closestIntersection.distance == float.max) // no hit
 			return scene.backgroundColor;
-		return scene.getColor(scene.indices[hitID][0]);
+		return scene.getColor(closestIntersection.triangleIndex, closestIntersection.barycentric);
 	}
 
 	static bool hitsBoundingBox(const Ray ray, const BoundingBox box) {
@@ -317,23 +322,39 @@ struct RayTracer {
 		assert(hitsBoundingBox(ray, box));
 	}
 
+	struct TriangleIntersection {
+		Ray ray;
+		Vec!3 point;
+		Vec!3 barycentric;
+		float distance;
+		ulong triangleIndex;
+	}
+
 	// Only positive distance hits.
-	float intersectTriangle(ref Ray ray, ulong index) {
+	TriangleIntersection intersectTriangle(ref Ray ray, ulong index) {
 		Vec!3 normal = scene.triangleNormals[index];
 		uint[3] triangle = scene.indices[index];
 		Vec!3 pos0 = scene.positions[triangle[0]];
 
+		TriangleIntersection intersection;
+		intersection.ray = ray;
+
 		float dist = intersectPlane(ray, normal, pos0);
-		if (dist < 0)
-			return -1;
+		if (dist < 0) {
+			intersection.distance = -1;
+			return intersection;
+		}
 		Vec!3 point = ray.org + ray.dir * dist;
 		Vec!3[3] positions = [pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]];
 		Vec!3 barycentric = calcBarycentric(positions, normal, point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point); // TODO choose
 		static foreach (i; 0 .. 3)
-			if (barycentric[i] < 0)
-				return -1;
-		return dist;
+			if (barycentric[i] < 0) {
+				intersection.distance = -1;
+				return intersection;
+			}
+
+		return TriangleIntersection(ray, point, barycentric, dist, index);
 	}
 
 	// Only positive distance hits.
@@ -345,6 +366,11 @@ struct RayTracer {
 		float planeDistance = toPlane.dot(normal);
 		float distance = planeDistance / rProject;
 		return distance;
+	}
+
+	static Vec!3 calcBarycentric(const Vec!3[3] verts, const Vec!3 point) {
+		Vec!3 normal = verts[1].cross(verts[0]).normalize();
+		return calcBarycentric(verts, normal, point);
 	}
 
 	static Vec!3 calcBarycentric(const Vec!3[3] verts, const Vec!3 normal, const Vec!3 point) {
