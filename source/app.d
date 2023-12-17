@@ -16,8 +16,8 @@ import vertexd.misc : degreesToRadians;
 import vertexd.world : World;
 
 void main(string[] args) {
-	uint width = 1920 / 2;
-	uint height = 1080 / 2;
+	uint width = 1920/3;
+	uint height = 1080/3;
 
 	const bool RENDER_IMAGE = (args.length > 1 && args[1] == "image");
 	const bool PROFILE = (args.length > 1 && args[1] == "profile");
@@ -41,8 +41,9 @@ void main(string[] args) {
 	RayCamera camera = new RayCamera(degreesToRadians(90.0f)); // Actual raytracing outside of framework.
 	world.cameras ~= camera;
 
+	//TODO: more AABB's on laptop???
 	uint minInBox = 5;
-	uint binCount = 1;
+	uint binCount = 2;
 	bool useBVH = true;
 
 	Scene scene = Scene(camera, [Light(Vec!3(2, 2, -2), Vec!3(1, 1, 1))], mesh, Vec!4(0, 0.8, 0,
@@ -55,7 +56,7 @@ void main(string[] args) {
 	window.setMouseType(MouseType.CAPTURED);
 	window.keyCallbacks ~= &speler.toetsinvoer;
 	window.mousepositionCallbacks ~= &speler.muisinvoer;
-	speler.location = Vec!3(0, 0, 4);
+	speler.location = Vec!3(0, 0, 2.5);
 	speler.addAttribute(camera);
 
 	vdStep(); // Needs to be done before render.
@@ -85,6 +86,7 @@ void main(string[] args) {
 			Duration performanceDur = benchmark!(() { rayTracer.trace(scene, 1, useBVH); })(PROFILE_COUNT)[0];
 			float performance = (cast(float) performanceDur.total!"usecs") / 1_000_000.0f / PROFILE_COUNT;
 			append(performancePath, commitName ~ ':' ~ performance.to!string ~ '\n');
+			writeln("Performance: ", performance, " sec");
 		}
 	} else
 		while (!vdShouldClose()) {
