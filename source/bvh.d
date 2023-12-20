@@ -74,9 +74,13 @@ struct BoundingBox {
 // Zou ook kunnen sorteren langs alle 3 de assen & vervolgens niet meer hoeven te sorteren.
 struct BVH {
 	static const uint MIN_IN_BOX = 4;
-	static const uint BINS = 1; // 1 = no binning: equal split.
+	static const uint BINS = 4; // 1 = no binning: equal split.
 
 	BoundingBox[] tree;
+
+	bool initialized() {
+		return tree.length > 0;
+	}
 
 	string toString(bool nice = false) const {
 		import std.conv;
@@ -186,7 +190,8 @@ struct BVH {
 
 	/// Split centroids along axis & determine bounding boxes.
 	/// Splits into 2 ~equal parts, by number of contained centroids.
-	SplitBox splitBoxAxis(ubyte axis)(const BoundingBox parent, Centroid[] centroids) if (BINS == 1) {
+	SplitBox splitBoxAxis(ubyte axis)(const BoundingBox parent, Centroid[] centroids)
+			if (BINS == 1) {
 		static assert(axis >= 0 && axis <= 2);
 		assert(centroids.length > MIN_IN_BOX);
 		assert(centroids.length < uint.max);
@@ -203,7 +208,8 @@ struct BVH {
 
 	/// Split centroids along axis & determine bounding boxes.
 	/// Splits along bin-edge that minimizes bounding areas.
-	SplitBox splitBoxAxis(ubyte axis)(const BoundingBox parent, Centroid[] centroids) if (BINS > 1) {
+	SplitBox splitBoxAxis(ubyte axis)(const BoundingBox parent, Centroid[] centroids)
+			if (BINS > 1) {
 		sort!(sortPredicate!axis())(centroids); // full sort along axis. (may be able to do better using topN)
 
 		SplitBox minSplit;

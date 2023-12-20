@@ -23,17 +23,29 @@ struct Scene {
 	Vec!4[] colors; // UV's to be + textures.
 	Vec!4 backgroundColor; // environment map?
 
-	void computeTriangleNormals() {
+	void prepare(bool useBVH) {
+		if (useBVH)
+			calculateBVH();
+		else if (triangleNormals.length == 0)
+			calculateNormals();
+	}
+
+	/// Creates BVH & Recalculates normals
+	void calculateBVH() {
+		this.bvh = BVH(indices, positions);
+		calculateNormals();
+	}
+
+	void calculateNormals() {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
+			Vec!3[3] pos = [
+				positions[triangle[0]], positions[triangle[1]],
+				positions[triangle[2]]
+			];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
-	}
-
-	void computeBVH() {
-		bvh = BVH(indices, positions);
 	}
 }
 
@@ -49,20 +61,21 @@ struct Ray {
 
 struct RayTracer {
 	uint maxDepth; // TODO
+	bool useBVH;
 	Scene scene;
-	BVH bvh;
 
-	@disable this();
-
-	this(Scene scene, uint maxDepth) {
-		this.scene = scene;
+	/// Params:
+	///   maxDepth = The max reflection depth
+	this(uint maxDepth, bool useBVH) {
 		this.maxDepth = maxDepth;
-		this.bvh = BVH(scene.indices, scene.positions);
+		this.useBVH = useBVH;
 	}
 
 	void trace(Screen screen) {
 		import std.math;
 		import std.parallelism;
+
+		scene.prepare(useBVH);
 
 		float virtualPlaneZ = -1.0f / tan(scene.cam.fov / 2.0f);
 		float verticalFrac = cast(float) screen.height / cast(float) screen.width;
@@ -90,28 +103,39 @@ struct RayTracer {
 		float closest = float.max;
 		ulong hitID = 0;
 
-		// BoundingBox[] testBoxes = [bvh.tree[0]];
+		if (useBVH) {
+			BoundingBox[] testBoxes = [scene.bvh.tree[0]];
 
-		// while (testBoxes.length > 0) {
-		// 	BoundingBox box = testBoxes[0];
-		// 	testBoxes = testBoxes[1 .. $];
+			while (testBoxes.length > 0) {
+				BoundingBox box = testBoxes[0];
+				testBoxes = testBoxes[1 .. $];
 
-		// 	if (hitsBoundingBox(ray, box)) {
-		// 		if (box.isLeaf) {
-		// 			for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
-			foreach(i; 0..scene.indices.length){
-						float dist = intersectTriangle(ray, i);
-						if (dist < closest && dist > 0) {
-							closest = dist;
-							hitID = i;
+				if (hitsBoundingBox(ray, box)) {
+					if (box.isLeaf) {
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
+							i++) {
+							float dist = intersectTriangle(ray, i);
+							if (dist < closest && dist > 0) {
+								closest = dist;
+								hitID = i;
+							}
 						}
+					} else {
+						testBoxes ~= scene.bvh.tree[box.leftChild];
+						testBoxes ~= scene.bvh.tree[box.rightChild];
 					}
-		// 		} else {
-		// 			testBoxes ~= bvh.tree[box.leftChild];
-		// 			testBoxes ~= bvh.tree[box.rightChild];
-		// 		}
-		// 	}
-		// }
+				}
+			}
+		} else {
+			foreach (i; 0 .. scene.indices.length) {
+				float dist = intersectTriangle(ray, i);
+				if (dist < closest && dist > 0) {
+					closest = dist;
+					hitID = i;
+				}
+			}
+		}
+
 		if (closest == float.max) // no hit
 			return scene.backgroundColor;
 		return scene.colors[scene.indices[hitID][0]]; // TODO
@@ -122,13 +146,35 @@ struct RayTracer {
 
 		Vec!3 lowDistPerAxis = (box.low - ray.org) / ray.dir;
 		Vec!3 highDistPerAxis = (box.high - ray.org) / ray.dir;
-		float inDist = lowDistPerAxis.max();
-		float outDist = highDistPerAxis.min();
-		import std.stdio;
+		Vec!3 inDistPerAxis;
+		Vec!3 outDistPerAxis;
+		foreach(i;0..3){
+			float low = lowDistPerAxis[i];
+			float high = highDistPerAxis[i];
+			if(low < high){
+				inDistPerAxis[i] = low;
+				outDistPerAxis[i] = high;
+			} else{
+				inDistPerAxis[i] = high;
+				outDistPerAxis[i] = low;
+			}
+		}
 
-		if (inDist < outDist)
-			writeln(outDist);
-		float inDist2 = lowDistPerAxis.max();
+		float inDist = inDistPerAxis.max();
+		float outDist = outDistPerAxis.min();
+		// import std.stdio;
+
+		// if ((ray.dir).isRoughly(Vec!3(0, 0, -1), 0.2)) {
+		// 	writeln(ray.dir);
+		// 	lowDistPerAxis.writeln;
+		// 	highDistPerAxis.writeln;
+		// 	inDist.writeln;
+		// 	outDist.writeln;
+ 		// 	auto a = 1;
+		// }
+		// if (inDist < outDist)
+		// 	writeln(outDist);
+		// float inDist2 = lowDistPerAxis.max();
 		return inDist > 0 && inDist < outDist;
 	}
 
@@ -150,7 +196,8 @@ struct RayTracer {
 		Vec!3 point = ray.org + ray.dir * dist;
 		uint[3] triangle = scene.indices[index];
 		Vec!3[3] positions = [
-			scene.positions[triangle[0]], scene.positions[triangle[1]], scene.positions[triangle[2]]
+			scene.positions[triangle[0]], scene.positions[triangle[1]],
+			scene.positions[triangle[2]]
 		];
 		Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point);
@@ -238,7 +285,8 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
+		const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -259,7 +307,8 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
+			verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 

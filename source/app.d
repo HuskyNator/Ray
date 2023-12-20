@@ -28,14 +28,14 @@ void main(string[] args) {
 	scene.indices = mesh.index.attr.getContent!3().dup;
 	scene.positions = (cast(
 			Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh.attributeSet.position.elementCount].dup;
-	scene.computeTriangleNormals();
 	scene.normals = (cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount].dup;
 	scene.colors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0 .. mesh.attributeSet.color[0].elementCount]
 		.dup;
 	scene.backgroundColor = Vec!4(0, 0.8, 0, 1);
 
 	Screen screen = new Screen(width, height);
-	RayTracer rayTracer = RayTracer(scene, 1);
+	RayTracer rayTracer = RayTracer(1, true);
+	rayTracer.scene = scene;
 	RayCamera camera = new RayCamera(&rayTracer, degreesToRadians(90.0f)); // Actual raytracing outside of framework.
 
 	World world = new World();
