@@ -3,8 +3,13 @@ import raycam;
 import raytracer;
 import screen;
 import std.conv;
+import std.datetime.stopwatch;
+import std.file;
+import std.process;
 import std.stdio;
+import std.string;
 import vertexd.core;
+import std.path;
 import vertexd.input.gltf_reader;
 import vertexd.mesh;
 import vertexd.misc : degreesToRadians;
@@ -37,6 +42,7 @@ void main(string[] args) {
 	Screen screen = new Screen(width, height);
 	RayTracer rayTracer = RayTracer(1, true);
 	rayTracer.scene = scene;
+	rayTracer.screen = screen;
 	RayCamera camera = new RayCamera(&rayTracer, degreesToRadians(90.0f)); // Actual raytracing outside of framework.
 
 	World world = new World();
@@ -54,11 +60,23 @@ void main(string[] args) {
 
 	vdStep(); // Needs to be done before render.
 	if (RENDER_IMAGE) {
-		rayTracer.trace(screen);
-		screen.texture.saveImage("TEMP3.jpg");
+		string logPath = ".." ~ dirSeparator ~ "logs" ~ dirSeparator;
+		mkdirRecurse(logPath);
+		auto shell = executeShell("git rev-parse --short HEAD");
+		string commitName = (shell.status == 0) ? lineSplitter(shell.output).front : "Unknown";
+
+		rayTracer.trace();
+		screen.texture.saveImage(logPath ~ commitName ~ ".jpg");
+
+		string performancePath = logPath ~ "performance.txt";
+		if (!exists(performancePath))
+			File(performancePath, "w").writeln("Previous commit : seconds/frame");
+		float frameTime = cast(float) benchmark!(() { rayTracer.trace(); })(10)[0].total!"usecs";
+		frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
+		File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
 	} else
 		while (!vdShouldClose()) {
-			rayTracer.trace(screen);
+			rayTracer.trace();
 			vdStep();
 			writeln("FPS: " ~ vdFps().to!string);
 		}
