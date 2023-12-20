@@ -12,6 +12,8 @@ struct Scene {
 	RayCamS cam;
 	Light[] lights;
 
+	BVH bvh;
+
 	uint[3][] indices;
 	Vec!3[] positions;
 	Vec!3[] normals; // per vertex -> otherwise normalmap or parallex mapping et cetera
@@ -23,12 +25,13 @@ struct Scene {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [
-				positions[triangle[0]], positions[triangle[1]],
-				positions[triangle[2]]
-			];
+			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
+	}
+
+	void computeBVH() {
+		bvh = BVH(indices, positions);
 	}
 }
 
@@ -56,21 +59,18 @@ struct RayTracer {
 		import std.math;
 		import std.parallelism;
 
-		float virtualPlaneZ = -1.0f/tan(scene.cam.fov / 2.0f);
+		float virtualPlaneZ = -1.0f / tan(scene.cam.fov / 2.0f);
 		float verticalFrac = cast(float) screen.height / cast(float) screen.width;
 
 		float widthFrac = 1.0f / cast(float) screen.width;
 		float heightFrag = 1.0f / cast(float) screen.height;
 
 		uint[] xs = new uint[screen.width];
-		uint[] ys = new uint[screen.height];
-		foreach(x; 0..screen.width)
-			xs[x] = x;
-		foreach(y;0..screen.height)
-			ys[y]=y;
+		foreach (uint i; 0 .. screen.width)
+			xs[i] = i;
 
 		foreach (ref x; parallel(xs)) {
-			foreach (ref y; parallel(ys)) {
+			foreach (y; 0 .. screen.height) {
 				Vec!2 delta = Vec!2(x * widthFrac, y * heightFrag * verticalFrac) * 2 - Vec!2(1, verticalFrac);
 
 				Vec!3 dir_cam = Vec!3(delta.x, delta.y, virtualPlaneZ).normalize();
@@ -88,6 +88,7 @@ struct RayTracer {
 	Vec!4 trace(Ray ray, uint depth) {
 		float closest = float.max;
 		ulong hitID = 0;
+
 		foreach (i; 0 .. scene.indices.length) {
 			float dist = intersectTriangle(ray, i);
 			if (dist < closest && dist > 0) {
@@ -108,8 +109,7 @@ struct RayTracer {
 		Vec!3 point = ray.org + ray.dir * dist;
 		uint[3] triangle = scene.indices[index];
 		Vec!3[3] positions = [
-			scene.positions[triangle[0]], scene.positions[triangle[1]],
-			scene.positions[triangle[2]]
+			scene.positions[triangle[0]], scene.positions[triangle[1]], scene.positions[triangle[2]]
 		];
 		Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
 		foreach (λ; barycentric)
