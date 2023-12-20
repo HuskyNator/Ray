@@ -46,7 +46,7 @@ class Speler : Node {
 					break;
 				case GLFW_KEY_LEFT_CONTROL:
 					_draai = Vec!2(0);
-					_verplaatsing = Vec!3(0);
+					// location = Vec!3(0);
 					break;
 				default:
 			}

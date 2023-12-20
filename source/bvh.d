@@ -59,7 +59,6 @@ struct BVH {
 	static const uint BINS = 1; // 1 = no binning: equal split.
 
 	BoundingBox[] tree;
-	private uint[3][] orderedIndices;
 
 	this(ref uint[3][] indices, const Vec!3[] positions) {
 		assert(indices.length < uint.max);
