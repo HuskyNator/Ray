@@ -90,27 +90,56 @@ struct RayTracer {
 		float closest = float.max;
 		ulong hitID = 0;
 
-		foreach (i; 0 .. scene.indices.length) {
-			float dist = intersectTriangle(ray, i);
-			if (dist < closest && dist > 0) {
-				closest = dist;
-				hitID = i;
-			}
-		}
+		// BoundingBox[] testBoxes = [bvh.tree[0]];
+
+		// while (testBoxes.length > 0) {
+		// 	BoundingBox box = testBoxes[0];
+		// 	testBoxes = testBoxes[1 .. $];
+
+		// 	if (hitsBoundingBox(ray, box)) {
+		// 		if (box.isLeaf) {
+		// 			for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
+			foreach(i; 0..scene.indices.length){
+						float dist = intersectTriangle(ray, i);
+						if (dist < closest && dist > 0) {
+							closest = dist;
+							hitID = i;
+						}
+					}
+		// 		} else {
+		// 			testBoxes ~= bvh.tree[box.leftChild];
+		// 			testBoxes ~= bvh.tree[box.rightChild];
+		// 		}
+		// 	}
+		// }
 		if (closest == float.max) // no hit
 			return scene.backgroundColor;
 		return scene.colors[scene.indices[hitID][0]]; // TODO
 	}
 
-	bool hitsBoundingBox(ref Ray ray, const BoundingBox box) const {
+	static bool hitsBoundingBox(const Ray ray, const BoundingBox box) {
 		import std.algorithm;
-		import std : isInputRange;
 
 		Vec!3 lowDistPerAxis = (box.low - ray.org) / ray.dir;
 		Vec!3 highDistPerAxis = (box.high - ray.org) / ray.dir;
 		float inDist = lowDistPerAxis.max();
 		float outDist = highDistPerAxis.min();
+		import std.stdio;
+
+		if (inDist < outDist)
+			writeln(outDist);
+		float inDist2 = lowDistPerAxis.max();
 		return inDist > 0 && inDist < outDist;
+	}
+
+	unittest {
+		BoundingBox box;
+		box.low = Vec!3(0, 0, 0);
+		box.high = Vec!3(1, 1, 1);
+		Ray ray;
+		ray.org = Vec!3(0.5, 0.5, -0.5);
+		ray.dir = Vec!3(0, 0, 1);
+		assert(hitsBoundingBox(ray, box));
 	}
 
 	// Only positive distance hits.
@@ -123,8 +152,8 @@ struct RayTracer {
 		Vec!3[3] positions = [
 			scene.positions[triangle[0]], scene.positions[triangle[1]], scene.positions[triangle[2]]
 		];
-		// Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
-		Vec!3 barycentric = calcProjectedBarycentric(positions, point);
+		Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
+		// Vec!3 barycentric = calcProjectedBarycentric(positions, point);
 		static foreach (i; 0 .. 3)
 			if (barycentric[i] < 0)
 				return -1;

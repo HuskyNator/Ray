@@ -140,9 +140,9 @@ class Texture {
 	// }
 
 	void saveImage(string path) {
-		Image image = Image(cast(int) width, cast(int) height, PixelType.rgba8, constraints);
-		ubyte[] original = image.allPixelsAtOnce();
-		original[] = cast(ubyte[])pixels[];
+		Image image;
+		image.createViewFromData(cast(ubyte*) pixels.ptr, cast(int) width, cast(int) height,
+			PixelType.rgba8, cast(int)(width * 4 * ubyte.sizeof));
 		image.flipVertical();
 		enforce(image.saveToFile(ImageFormat.PNG, path), "Could not save image to file.");
 	}
