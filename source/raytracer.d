@@ -1,7 +1,13 @@
 module raytracer;
 import bvh;
+import core.atomic;
+import core.sync.condition;
+import core.thread;
+import core.thread.threadbase;
 import raycam;
 import screen;
+import std.algorithm : max, min;
+import std.parallelism : totalCPUs;
 import vertexd.core;
 import vertexd.misc;
 
@@ -40,7 +46,10 @@ struct Scene {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
+			Vec!3[3] pos = [
+				positions[triangle[0]], positions[triangle[1]],
+				positions[triangle[2]]
+			];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
 	}
@@ -60,75 +69,124 @@ struct RayTracer {
 	uint maxDepth; // TODO
 	bool useBVH;
 	Scene scene;
+	Screen screen;
+
+	Thread[] threads;
+	uint[2][] threadParams;
+	uint[2][] TEMP;
+	Condition threadCondition;
+	shared uint atomicInt = 0;
+	shared uint tempAtomicInt2; //TODO
+	shared uint waitingInt = 0;
+
+	float virtualPlaneZ;
+	float verticalFrac;
+	float widthFrac;
+	float heightFrag;
+
+	uint actualThreadNum;
+	bool DIE = false;
+
+	void killThreads() {
+		atomicStore(DIE, true);
+
+		while (atomicLoad(waitingInt) < actualThreadNum)
+			Thread.yield();
+
+		threadCondition.notifyAll();
+		// foreach (Thread t; threads)
+		// 	t.join(); // TODO timeout.
+	}
 
 	/// Params:
 	///   maxDepth = The max reflection depth
-	this(uint maxDepth, bool useBVH) {
+	this(uint maxDepth, bool useBVH, Screen screen) {
 		this.maxDepth = maxDepth;
 		this.useBVH = useBVH;
+		this.screen = screen;
+
+		immutable uint threadNum = max(1, totalCPUs - 1);
+		immutable uint perThread = screen.height / threadNum;
+		immutable uint loss = screen.height % threadNum;
+		this.actualThreadNum = threadNum + ((loss > 0) ? 1 : 0); // TODO BUGREPORT ZONDER HAAKJES
+
+		this.threads = new Thread[actualThreadNum];
+		this.threadCondition = new Condition(new Mutex());
+		this.waitingInt = 0;
+
+		foreach (uint t; 0 .. threadNum) {
+			threadParams ~= [t * perThread, (t + 1) * perThread];
+			new Thread(&threadTrace).start();
+		}
+
+		if (loss > 0) {
+			threadParams ~= [screen.height - loss, screen.height];
+			new Thread(&threadTrace).start();
+		}
+
 	}
 
-	void trace(Screen screen) {
+	static uint id;
+	void threadTrace() {
+		import std.stdio;
+
+		id = atomicFetchAdd(atomicInt, 1);
+		writeln(id);
+		threads[id] = Thread.getThis();
+		uint start = threadParams[id][0];
+		uint end = threadParams[id][1];
+
+		// TODO Figure out how to end thread without creating `shouldStop` boolean (aka: kill it)
+		while (true) {
+			atomicFetchAdd(waitingInt, 1);
+			threadCondition.wait();
+			if (atomicLoad(DIE))
+				break;
+			for (uint y = start; y < end; y++) {
+				for (uint x = 0; x < screen.width; x++) {
+					tracePixel(x, y);
+				}
+			}
+		}
+	}
+
+	void tracePixel(uint x, uint y) {
+		Vec!2 delta = Vec!2(x * widthFrac, y * heightFrag * verticalFrac) * 2 - Vec!2(1, verticalFrac);
+
+		Vec!3 dir_cam = Vec!3(delta.x, delta.y, virtualPlaneZ).normalize();
+		Vec!4 dir_world4 = scene.cam.camMatrix ^ Vec!4(dir_cam.x, dir_cam.y, dir_cam.z, 0);
+		Vec!3 dir_world = Vec!3(dir_world4.x, dir_world4.y, dir_world4.z).normalize();
+
+		Ray ray = Ray(scene.cam.pos, dir_world);
+		Vec!4 color = trace(ray, 0);
+		// Vec!4 color = Vec!4(dir_world.x,dir_world.y,0, 1);
+		screen.setPixel(x, y, color);
+	}
+
+	void trace() {
 		import std.math;
 		import std.parallelism;
 
 		scene.prepare(useBVH);
 
-		immutable float virtualPlaneZ = -1.0f / tan(scene.cam.fov / 2.0f);
-		immutable float verticalFrac = cast(float) screen.height / cast(float) screen.width;
+		this.virtualPlaneZ = -1.0f / tan(scene.cam.fov / 2.0f);
+		this.verticalFrac = cast(float) screen.height / cast(float) screen.width;
 
-		immutable float widthFrac = 1.0f / cast(float) screen.width;
-		immutable float heightFrag = 1.0f / cast(float) screen.height;
+		this.widthFrac = 1.0f / cast(float) screen.width;
+		this.heightFrag = 1.0f / cast(float) screen.height;
 
-		void tracePixel(Screen screen, uint x, uint y) {
-			Vec!2 delta = Vec!2(x * widthFrac, y * heightFrag * verticalFrac) * 2 - Vec!2(1, verticalFrac);
+		import std.stdio;
 
-			Vec!3 dir_cam = Vec!3(delta.x, delta.y, virtualPlaneZ).normalize();
-			Vec!4 dir_world4 = scene.cam.camMatrix ^ Vec!4(dir_cam.x, dir_cam.y, dir_cam.z, 0);
-			Vec!3 dir_world = Vec!3(dir_world4.x, dir_world4.y, dir_world4.z).normalize();
-
-			Ray ray = Ray(scene.cam.pos, dir_world);
-			Vec!4 color = trace(ray, 0);
-			// Vec!4 color = Vec!4(dir_world.x,dir_world.y,0, 1);
-			screen.setPixel(x, y, color);
+		// TODO remove & wait at startup
+		while (atomicLoad(waitingInt) < actualThreadNum)
+			Thread.yield();
+		atomicStore(waitingInt, 0);
+		threadCondition.notifyAll();
+		while (atomicLoad(waitingInt) < actualThreadNum) {
+			// Thread.yield();
+			writeln(atomicLoad(waitingInt));
+			Thread.sleep(1.seconds);
 		}
-
-		void traceThread(uint start, uint end) {
-			for (uint y = start; y < end; y++) {
-				for (uint x = 0; x < screen.width; x++) {
-					tracePixel(screen, x, y);
-				}
-			}
-		}
-
-		import core.thread;
-		import core.thread.threadbase;
-		import std.parallelism : totalCPUs;
-		import std.algorithm : min, max;
-
-		immutable uint threadNum = max(1, totalCPUs - 1);
-		immutable uint perThread = screen.height / threadNum;
-		immutable uint loss = screen.height % threadNum;
-		Thread[] threads;
-
-		Callable[] calls;
-		foreach (uint t; 0 .. threadNum) {
-			// Callable c;
-			// c = ((t) => () { traceThread(t * perThread, (t + 1) * perThread); })(t);
-			// calls ~= c;
-			threads ~= new Thread(((t) => () { traceThread(t * perThread, (t + 1) * perThread); })(t)).start();
-		}
-		if (loss > 0) {
-			// Callable c;
-			// c = () { traceThread(screen.width - loss, screen.width); };
-			// calls ~= c;
-			threads ~= new Thread(() { traceThread(screen.height - loss, screen.height); }).start();
-		}
-
-		foreach (t; threads)
-			t.join(true);
-		// foreach (c; calls)
-		// 	c();
 	}
 
 	Vec!4 trace(Ray ray, uint depth) {
@@ -144,7 +202,8 @@ struct RayTracer {
 
 				if (hitsBoundingBox(ray, box)) {
 					if (box.isLeaf) {
-						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
+							i++) {
 							float dist = intersectTriangle(ray, i);
 							if (dist < closest && dist > 0) {
 								closest = dist;
@@ -214,7 +273,8 @@ struct RayTracer {
 		Vec!3 point = ray.org + ray.dir * dist;
 		uint[3] triangle = scene.indices[index];
 		Vec!3[3] positions = [
-			scene.positions[triangle[0]], scene.positions[triangle[1]], scene.positions[triangle[2]]
+			scene.positions[triangle[0]], scene.positions[triangle[1]],
+			scene.positions[triangle[2]]
 		];
 		Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point);
@@ -302,7 +362,8 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
+		const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -323,7 +384,8 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
+			verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 

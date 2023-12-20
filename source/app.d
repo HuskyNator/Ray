@@ -40,9 +40,8 @@ void main(string[] args) {
 	scene.backgroundColor = Vec!4(0, 0.8, 0, 1);
 
 	Screen screen = new Screen(width, height);
-	RayTracer rayTracer = RayTracer(1, true);
+	RayTracer rayTracer = RayTracer(1, true, screen);
 	rayTracer.scene = scene;
-	rayTracer.screen = screen;
 	RayCamera camera = new RayCamera(&rayTracer, degreesToRadians(90.0f)); // Actual raytracing outside of framework.
 
 	World world = new World();
@@ -68,17 +67,18 @@ void main(string[] args) {
 		rayTracer.trace();
 		screen.texture.saveImage(logPath ~ commitName ~ ".jpg");
 
-		string performancePath = logPath ~ "performance.txt";
-		if (!exists(performancePath))
-			File(performancePath, "w").writeln("Previous commit : seconds/frame");
-		float frameTime = cast(float) benchmark!(() { rayTracer.trace(); })(10)[0].total!"usecs";
-		frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
-		File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
+		// string performancePath = logPath ~ "performance.txt";
+		// if (!exists(performancePath))
+		// 	File(performancePath, "w").writeln("Previous commit : seconds/frame");
+		// float frameTime = cast(float) benchmark!(() { rayTracer.trace(); })(10)[0].total!"usecs";
+		// frameTime = frameTime / (10.0f * 1.seconds.total!"usecs");
+		// File(performancePath, "a").writeln(commitName ~ ":" ~ frameTime.to!string);
+		rayTracer.killThreads();
 	} else
 		while (!vdShouldClose()) {
 			rayTracer.trace();
 			vdStep();
-			writeln("FPS: " ~ vdFps().to!string);
+			// writeln("FPS: " ~ vdFps().to!string);
 		}
 	// import std.random : uniform;
 	// import vertexd.misc;
