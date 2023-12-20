@@ -10,10 +10,12 @@ struct RayCamS {
 }
 
 class RayCamera : Camera {
+	RayTracer* rayTracer;
 	float focalLength;
 
-	this(float focalLength = 1.0f) {
+	this(RayTracer* rayTracer, float focalLength = 1.0f) {
 		super(Mat!4(1));
+		this.rayTracer = rayTracer;
 		this.focalLength = focalLength;
 	}
 
@@ -23,6 +25,6 @@ class RayCamera : Camera {
 	}
 
 	override void use() {
-		RayTracer.scene.cam = RayCamS(location, cameraMatrix, focalLength);
+		rayTracer.scene.cam = RayCamS(location, cameraMatrix, focalLength);
 	}
 }
