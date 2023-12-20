@@ -5,7 +5,8 @@
 	"copyFiles": [
 		"source/shaders/*",
 		"glfw3.dll",
-		"glfw3dll.lib"
+		"glfw3dll.lib",
+		"resources/*"
 	],
 	"copyright": "Copyright © 2023, Paul",
 	"dependencies": {
