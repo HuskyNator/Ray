@@ -8,8 +8,9 @@ class Speler : Node {
 	private Vec!3 _verplaatsing;
 	private Vec!2 _draai;
 	private Vec!2 _draaiDelta;
-	precision snelheid = 3;
-	precision draaiSnelheid = 0.6;
+	private Vec!2 _oude_draai;
+	precision snelheid = 1;
+	precision draaiSnelheid = 0.2;
 
 	this() {
 		super();
@@ -34,7 +35,7 @@ class Speler : Node {
 				case GLFW_KEY_SPACE:
 					_verplaatsing.y += delta;
 					break;
-				case GLFW_KEY_LEFT_CONTROL:
+				case GLFW_KEY_LEFT_SHIFT:
 					_verplaatsing.y -= delta;
 					break;
 				case GLFW_KEY_S:
@@ -43,6 +44,10 @@ class Speler : Node {
 				case GLFW_KEY_W:
 					_verplaatsing.z += delta;
 					break;
+				case GLFW_KEY_LEFT_CONTROL:
+					_draai = Vec!2(0);
+					_verplaatsing = Vec!3(0);
+					break;
 				default:
 			}
 		} catch (Exception e) {
@@ -50,12 +55,10 @@ class Speler : Node {
 	}
 
 	void muisinvoer(MousepositionInput input) nothrow {
-		static double oude_x = 0;
-		static double oude_y = 0;
-		_draaiDelta.y -= input.x - oude_x;
-		_draaiDelta.x -= input.y - oude_y;
-		oude_x = input.x;
-		oude_y = input.y;
+		_draaiDelta.y -= input.x - _oude_draai.x;
+		_draaiDelta.x -= input.y - _oude_draai.y;
+		_oude_draai.x = input.x;
+		_oude_draai.y = input.y;
 	}
 
 	import std.datetime;
