@@ -26,7 +26,7 @@ void main(string[] args) {
 		Window.setStandardVisible(false);
 	Window window = new Window("Ray", width, height);
 	window.setBackgroundColor(Vec!4(0, 0, 0.5, 1));
-	GltfReader gltfReader = new GltfReader("cube.gltf");
+	GltfReader gltfReader = new GltfReader("teapot.gltf");
 	GltfMesh mesh = gltfReader.meshes[0][0];
 
 	World world = new World();

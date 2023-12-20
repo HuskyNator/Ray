@@ -257,16 +257,17 @@ struct RayTracer {
 
 	// Only positive distance hits.
 	float intersectTriangle(ref Ray ray, ulong index) {
-		float dist = intersectPlane(ray, index);
+		Vec!3 normal = scene.triangleNormals[index];
+		uint[3] triangle = scene.indices[index];
+		Vec!3 pos0 = scene.positions[triangle[0]];
+
+		float dist = intersectPlane(ray, normal, pos0);
 		if (dist < 0)
 			return -1;
 		Vec!3 point = ray.org + ray.dir * dist;
-		uint[3] triangle = scene.indices[index];
-		Vec!3[3] positions = [
-			scene.positions[triangle[0]], scene.positions[triangle[1]], scene.positions[triangle[2]]
-		];
-		Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
-		// Vec!3 barycentric = calcProjectedBarycentric(positions, point);
+		Vec!3[3] positions = [pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]];
+		Vec!3 barycentric = calcBarycentric(positions, normal, point);
+		// Vec!3 barycentric = calcProjectedBarycentric(positions, point); // TODO choose
 		static foreach (i; 0 .. 3)
 			if (barycentric[i] < 0)
 				return -1;
@@ -274,12 +275,10 @@ struct RayTracer {
 	}
 
 	// Only positive distance hits.
-	float intersectPlane(ref Ray ray, ulong index) {
-		Vec!3 normal = scene.triangleNormals[index];
+	float intersectPlane(ref Ray ray, Vec!3 normal, Vec!3 planePoint) {
 		float rProject = ray.dir.dot(normal);
 		if (rProject == 0)
 			return -1; // parallel
-		Vec!3 planePoint = scene.positions[scene.indices[index][0]];
 		Vec!3 toPlane = planePoint - ray.org;
 		float planeDistance = toPlane.dot(normal);
 		float distance = planeDistance / rProject;
