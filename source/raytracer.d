@@ -24,7 +24,7 @@ struct Scene {
 	Vec!4 backgroundColor; // environment map?
 
 	void prepare(bool useBVH) {
-		if (useBVH)
+		if (useBVH && !bvh.initialized)
 			calculateBVH();
 		else if (triangleNormals.length == 0)
 			calculateNormals();
@@ -40,10 +40,7 @@ struct Scene {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [
-				positions[triangle[0]], positions[triangle[1]],
-				positions[triangle[2]]
-			];
+			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
 	}
@@ -77,26 +74,61 @@ struct RayTracer {
 
 		scene.prepare(useBVH);
 
-		float virtualPlaneZ = -1.0f / tan(scene.cam.fov / 2.0f);
-		float verticalFrac = cast(float) screen.height / cast(float) screen.width;
+		immutable float virtualPlaneZ = -1.0f / tan(scene.cam.fov / 2.0f);
+		immutable float verticalFrac = cast(float) screen.height / cast(float) screen.width;
 
-		float widthFrac = 1.0f / cast(float) screen.width;
-		float heightFrag = 1.0f / cast(float) screen.height;
+		immutable float widthFrac = 1.0f / cast(float) screen.width;
+		immutable float heightFrag = 1.0f / cast(float) screen.height;
 
-		for (uint x = 0; x < screen.width; x++) {
-			for (uint y = 0; y < screen.height; y++) {
-				Vec!2 delta = Vec!2(x * widthFrac, y * heightFrag * verticalFrac) * 2 - Vec!2(1, verticalFrac);
+		void tracePixel(Screen screen, uint x, uint y) {
+			Vec!2 delta = Vec!2(x * widthFrac, y * heightFrag * verticalFrac) * 2 - Vec!2(1, verticalFrac);
 
-				Vec!3 dir_cam = Vec!3(delta.x, delta.y, virtualPlaneZ).normalize();
-				Vec!4 dir_world4 = scene.cam.camMatrix ^ Vec!4(dir_cam.x, dir_cam.y, dir_cam.z, 0);
-				Vec!3 dir_world = Vec!3(dir_world4.x, dir_world4.y, dir_world4.z).normalize();
+			Vec!3 dir_cam = Vec!3(delta.x, delta.y, virtualPlaneZ).normalize();
+			Vec!4 dir_world4 = scene.cam.camMatrix ^ Vec!4(dir_cam.x, dir_cam.y, dir_cam.z, 0);
+			Vec!3 dir_world = Vec!3(dir_world4.x, dir_world4.y, dir_world4.z).normalize();
 
-				Ray ray = Ray(scene.cam.pos, dir_world);
-				Vec!4 color = trace(ray, 0);
-				// Vec!4 color = Vec!4(dir_world.x,dir_world.y,0, 1);
-				screen.setPixel(x, y, color);
+			Ray ray = Ray(scene.cam.pos, dir_world);
+			Vec!4 color = trace(ray, 0);
+			// Vec!4 color = Vec!4(dir_world.x,dir_world.y,0, 1);
+			screen.setPixel(x, y, color);
+		}
+
+		void traceThread(uint start, uint end) {
+			for (uint y = start; y < end; y++) {
+				for (uint x = 0; x < screen.width; x++) {
+					tracePixel(screen, x, y);
+				}
 			}
 		}
+
+		import core.thread;
+		import core.thread.threadbase;
+		import std.parallelism : totalCPUs;
+		import std.algorithm : min, max;
+
+		immutable uint threadNum = max(1, totalCPUs - 1);
+		immutable uint perThread = screen.height / threadNum;
+		immutable uint loss = screen.height % threadNum;
+		Thread[] threads;
+
+		Callable[] calls;
+		foreach (uint t; 0 .. threadNum) {
+			// Callable c;
+			// c = ((t) => () { traceThread(t * perThread, (t + 1) * perThread); })(t);
+			// calls ~= c;
+			threads ~= new Thread(((t) => () { traceThread(t * perThread, (t + 1) * perThread); })(t)).start();
+		}
+		if (loss > 0) {
+			// Callable c;
+			// c = () { traceThread(screen.width - loss, screen.width); };
+			// calls ~= c;
+			threads ~= new Thread(() { traceThread(screen.height - loss, screen.height); }).start();
+		}
+
+		foreach (t; threads)
+			t.join(true);
+		// foreach (c; calls)
+		// 	c();
 	}
 
 	Vec!4 trace(Ray ray, uint depth) {
@@ -112,8 +144,7 @@ struct RayTracer {
 
 				if (hitsBoundingBox(ray, box)) {
 					if (box.isLeaf) {
-						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
-							i++) {
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
 							float dist = intersectTriangle(ray, i);
 							if (dist < closest && dist > 0) {
 								closest = dist;
@@ -148,13 +179,13 @@ struct RayTracer {
 		Vec!3 highDistPerAxis = (box.high - ray.org) / ray.dir;
 		Vec!3 inDistPerAxis;
 		Vec!3 outDistPerAxis;
-		foreach(i;0..3){
+		foreach (i; 0 .. 3) {
 			float low = lowDistPerAxis[i];
 			float high = highDistPerAxis[i];
-			if(low < high){
+			if (low < high) {
 				inDistPerAxis[i] = low;
 				outDistPerAxis[i] = high;
-			} else{
+			} else {
 				inDistPerAxis[i] = high;
 				outDistPerAxis[i] = low;
 			}
@@ -162,19 +193,6 @@ struct RayTracer {
 
 		float inDist = inDistPerAxis.max();
 		float outDist = outDistPerAxis.min();
-		// import std.stdio;
-
-		// if ((ray.dir).isRoughly(Vec!3(0, 0, -1), 0.2)) {
-		// 	writeln(ray.dir);
-		// 	lowDistPerAxis.writeln;
-		// 	highDistPerAxis.writeln;
-		// 	inDist.writeln;
-		// 	outDist.writeln;
- 		// 	auto a = 1;
-		// }
-		// if (inDist < outDist)
-		// 	writeln(outDist);
-		// float inDist2 = lowDistPerAxis.max();
 		return inDist > 0 && inDist < outDist;
 	}
 
@@ -196,8 +214,7 @@ struct RayTracer {
 		Vec!3 point = ray.org + ray.dir * dist;
 		uint[3] triangle = scene.indices[index];
 		Vec!3[3] positions = [
-			scene.positions[triangle[0]], scene.positions[triangle[1]],
-			scene.positions[triangle[2]]
+			scene.positions[triangle[0]], scene.positions[triangle[1]], scene.positions[triangle[2]]
 		];
 		Vec!3 barycentric = calcBarycentric(positions, scene.triangleNormals[index], point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point);
@@ -285,8 +302,7 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
-		const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -307,8 +323,7 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
-			verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 

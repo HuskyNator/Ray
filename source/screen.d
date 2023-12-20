@@ -29,6 +29,7 @@ class Quad : Mesh {
 	}
 
 	override void drawSetup(Node node) {
+		shaderProgram.use();
 		Screen screen = cast(Screen) node;
 		screen.setup();
 	}
@@ -50,8 +51,8 @@ final class Screen : Node {
 
 	this(uint width, uint height) {
 		super();
-		this.width = width;
-		this.height = height;
+		// this.width = width;
+		// this.height = height;
 		this.shader = new ShaderProgram(shaderFiles);
 		this.meshes ~= new Quad(2, 2, shader);
 		this.pixelUniformLocation = shader.getUniformLocation("pixels");
@@ -59,6 +60,8 @@ final class Screen : Node {
 	}
 
 	void setSize(uint width, uint height) { // Resets texture/sampler/handle.
+		this.width = width;
+		this.height = height;
 		this.texture = new Texture(width, height);
 		this.sampler = new Sampler(""); // Standard Sampler (neareast).
 		this.handle = new BindlessTexture(texture, sampler);

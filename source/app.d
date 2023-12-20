@@ -2,6 +2,7 @@ import player;
 import raycam;
 import raytracer;
 import screen;
+import std.conv;
 import std.stdio;
 import vertexd.core;
 import vertexd.input.gltf_reader;
@@ -59,6 +60,7 @@ void main(string[] args) {
 		while (!vdShouldClose()) {
 			rayTracer.trace(screen);
 			vdStep();
+			writeln("FPS: " ~ vdFps().to!string);
 		}
 	// import std.random : uniform;
 	// import vertexd.misc;
