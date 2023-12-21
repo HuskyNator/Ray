@@ -45,7 +45,8 @@ struct Scene {
 			foreach (i; 0 .. 3) {
 				uv += (colors.uvs[triangle[i]] % Vec!2(1, 1)) * barycentric[i];
 			}
-			return colors.material.baseColor_texture.base.sampleTexture(uv) * colors.material.baseColor_factor;
+			return colors.material.baseColor_texture.base.sampleTexture(
+				uv) * colors.material.baseColor_factor;
 		} else {
 			Vec!4 color = Vec!4(0);
 			static foreach (i; 0 .. 3)
@@ -62,18 +63,21 @@ struct Scene {
 		meshColors.useMaterial = mesh.material.baseColor_texture !is null;
 		if (!meshColors.useMaterial) {
 			assert(mesh.attributeSet.color[0].present());
-			meshColors.vertexColors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
+			meshColors.vertexColors = (cast(
+					Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
 				.. mesh.attributeSet.color[0].elementCount].dup;
 		} else {
 			assert(mesh.material.baseColor_texture !is null);
-			Mesh.Attribute uvs = mesh.attributeSet.texCoord[mesh.material.baseColor_texture.texCoord];
+			Mesh.Attribute uvs = mesh.attributeSet
+				.texCoord[mesh.material.baseColor_texture.texCoord];
 			assert(uvs.present());
 			meshColors.uvs = (cast(Vec!2*) uvs.content.ptr)[0 .. uvs.elementCount].dup;
 			meshColors.material = mesh.material;
 		}
 
 		this(camera, lights, mesh.index.attr.getContent!3(),
-			(cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh.attributeSet.position.elementCount],
+			(cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh
+				.attributeSet.position.elementCount],
 			(cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount],
 			meshColors, backgroundColor, minInBox, binCount);
 	}
@@ -103,7 +107,10 @@ struct Scene {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
+			Vec!3[3] pos = [
+				positions[triangle[0]], positions[triangle[1]],
+				positions[triangle[2]]
+			];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
 	}
@@ -249,9 +256,9 @@ struct RayTracer {
 		}
 	}
 
-	Vec!4 trace(Ray ray, uint depth) {
-		TriangleIntersection closestIntersection;
-		closestIntersection.distance = float.max;
+	Vec!4 trace(Ray ray, uint depth, float maxDist = float.max) {
+		Hit closestIntersection;
+		closestIntersection.distance = maxDist;
 
 		if (useBVH) {
 			boxQueue.clear();
@@ -260,10 +267,13 @@ struct RayTracer {
 			while (boxQueue.length > 0) {
 				BoundingBox box = boxQueue.pop();
 
-				if (hitsBoundingBox(ray, box)) {
+				float boundDist = hitsBoundingBox(ray, box);
+				if (boundDist > 0 && boundDist <= closestIntersection.distance) {
+					// TODO: optimize skipping of boundingboxes (eg. when other intersections have been found)
 					if (box.isLeaf) {
-						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
-							TriangleIntersection intersect = intersectTriangle(ray, i);
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
+							i++) {
+							Hit intersect = intersectTriangle(ray, i);
 							if (intersect.distance < closestIntersection.distance && intersect.distance > 0) {
 								closestIntersection = intersect;
 							}
@@ -276,7 +286,7 @@ struct RayTracer {
 			}
 		} else {
 			foreach (i; 0 .. scene.indices.length) {
-				TriangleIntersection intersect = intersectTriangle(ray, i);
+				Hit intersect = intersectTriangle(ray, i);
 				if (intersect.distance < closestIntersection.distance && intersect.distance > 0) {
 					closestIntersection = intersect;
 				}
@@ -285,10 +295,62 @@ struct RayTracer {
 
 		if (closestIntersection.distance == float.max) // no hit
 			return scene.backgroundColor;
-		return scene.getColor(closestIntersection.triangleIndex, closestIntersection.barycentric);
+
+		Vec!4 hitColor = shade(closestIntersection);
+		if (depth == maxDepth)
+			return hitColor;
+
+		//TODO: Ray transmissionRay
+		//TODO Ray reflectedRay = ray.reflect(closestIntersection);
+		//TODO: note both will calculate the mapped normal at position ^ (precalculate inside intersection?)
+		// hitColor += <?> trace(reflectedRay, depth + 1);
+		// temporary:
+		return hitColor;
 	}
 
-	static bool hitsBoundingBox(const Ray ray, const BoundingBox box) {
+	Vec!4 shade(Hit hit) {
+		uint[3] triangle = scene.indices[hit.triangleIndex];
+		Vec!3 normal;
+		Vec!3 color;
+		// Determine color & normal
+		if (!scene.colors.useMaterial) {
+			foreach (i; 0 .. 3) {
+				normal += scene.normals[triangle[i]];
+				color += scene.colors.vertexColors[triangle[i]];
+			}
+			normal *= hit.barycentric;
+			color *= hit.barycentric;
+			// diffuse = 0.7;
+			// specular = 0.3;
+			// TODO
+			assert(0);
+		} else {
+			Material material = scene.colors.material;
+			Vec!2 uv;
+			foreach (i; 0 .. 3)
+				uv += (scene.colors.uvs[triangle[i]] % Vec!2(1, 1));
+			uv *= hit.barycentric;
+			color = material.baseColor_texture.base.sampleTexture(
+				uv) * colors.material.baseColor_factor;
+			normal = material.normal_texture.base.sampleTexture(uv);
+			Vec!4 mr = material.metal_roughness_texture.base.sampleTexture(uv);
+			float roughness = mr[1] * material.roughnessFactor;
+			float metalic = mr[2] * material.metalFactor;
+			//TODO: more
+			assert(0);
+		}
+		//TODO: temp model
+		// float diffuse = scene.colors.material.roughnessFactor;
+		// float specular = scene.colors.material.metal_roughness_texture
+		// Loop over lights
+		// foreach (Light l; scene.lights) {
+		// 	Vec!3 toLight = (l.pos - hit.point).normalize();
+		// 	Vec!3 halfway = (toLight - hit.ray.dir).normalize();
+
+		// }
+	}
+
+	static float hitsBoundingBox(const Ray ray, const BoundingBox box) {
 		import std.algorithm;
 
 		Vec!3 lowDistPerAxis = (box.low - ray.org) / ray.dir;
@@ -309,7 +371,9 @@ struct RayTracer {
 
 		float inDist = inDistPerAxis.max();
 		float outDist = outDistPerAxis.min();
-		return inDist > 0 && inDist < outDist;
+		if (inDist >= outDist)
+			return -1;
+		return inDist;
 	}
 
 	unittest {
@@ -319,24 +383,28 @@ struct RayTracer {
 		Ray ray;
 		ray.org = Vec!3(0.5, 0.5, -0.5);
 		ray.dir = Vec!3(0, 0, 1);
-		assert(hitsBoundingBox(ray, box));
+		assert(hitsBoundingBox(ray, box) > 0);
 	}
 
-	struct TriangleIntersection {
+	struct Hit {
 		Ray ray;
 		Vec!3 point;
 		Vec!3 barycentric;
 		float distance;
 		ulong triangleIndex;
+
+		T interpolate(T)(T[3] vals) {
+			return (vals * barycentric).sum!T();
+		}
 	}
 
 	// Only positive distance hits.
-	TriangleIntersection intersectTriangle(ref Ray ray, ulong index) {
+	Hit intersectTriangle(ref Ray ray, ulong index) {
 		Vec!3 normal = scene.triangleNormals[index];
 		uint[3] triangle = scene.indices[index];
 		Vec!3 pos0 = scene.positions[triangle[0]];
 
-		TriangleIntersection intersection;
+		Hit intersection;
 		intersection.ray = ray;
 
 		float dist = intersectPlane(ray, normal, pos0);
@@ -345,7 +413,9 @@ struct RayTracer {
 			return intersection;
 		}
 		Vec!3 point = ray.org + ray.dir * dist;
-		Vec!3[3] positions = [pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]];
+		Vec!3[3] positions = [
+			pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]
+		];
 		Vec!3 barycentric = calcBarycentric(positions, normal, point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point); // TODO choose
 		static foreach (i; 0 .. 3)
@@ -354,7 +424,7 @@ struct RayTracer {
 				return intersection;
 			}
 
-		return TriangleIntersection(ray, point, barycentric, dist, index);
+		return Hit(ray, point, barycentric, dist, index);
 	}
 
 	// Only positive distance hits.
@@ -438,7 +508,8 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
+		const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -459,7 +530,8 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
+			verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 
