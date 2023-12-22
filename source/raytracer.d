@@ -38,23 +38,6 @@ struct Scene {
 	Colors colors;
 	Vec!4 backgroundColor; // environment map?
 
-	Vec!4 getColor(ulong triangleIndex, Vec!3 barycentric) {
-		uint[3] triangle = indices[triangleIndex];
-		if (colors.useMaterial) {
-			Vec!2 uv = Vec!2(0);
-			foreach (i; 0 .. 3) {
-				uv += (colors.uvs[triangle[i]] % Vec!2(1, 1)) * barycentric[i];
-			}
-			return colors.material.baseColor_texture.base.sampleTexture(
-				uv) * colors.material.baseColor_factor;
-		} else {
-			Vec!4 color = Vec!4(0);
-			static foreach (i; 0 .. 3)
-				color += colors.vertexColors[triangle[i]] * barycentric[i];
-			return color;
-		}
-	}
-
 	Vec!3[] triangleNormals;
 	BVH bvh;
 
@@ -63,21 +46,18 @@ struct Scene {
 		meshColors.useMaterial = mesh.material.baseColor_texture !is null;
 		if (!meshColors.useMaterial) {
 			assert(mesh.attributeSet.color[0].present());
-			meshColors.vertexColors = (cast(
-					Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
+			meshColors.vertexColors = (cast(Vec!4*) mesh.attributeSet.color[0].content.ptr)[0
 				.. mesh.attributeSet.color[0].elementCount].dup;
 		} else {
 			assert(mesh.material.baseColor_texture !is null);
-			Mesh.Attribute uvs = mesh.attributeSet
-				.texCoord[mesh.material.baseColor_texture.texCoord];
+			Mesh.Attribute uvs = mesh.attributeSet.texCoord[mesh.material.baseColor_texture.texCoord];
 			assert(uvs.present());
 			meshColors.uvs = (cast(Vec!2*) uvs.content.ptr)[0 .. uvs.elementCount].dup;
 			meshColors.material = mesh.material;
 		}
 
 		this(camera, lights, mesh.index.attr.getContent!3(),
-			(cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh
-				.attributeSet.position.elementCount],
+			(cast(Vec!3*) mesh.attributeSet.position.content.ptr)[0 .. mesh.attributeSet.position.elementCount],
 			(cast(Vec!3*) mesh.attributeSet.normal.content.ptr)[0 .. mesh.attributeSet.normal.elementCount],
 			meshColors, backgroundColor, minInBox, binCount);
 	}
@@ -107,10 +87,7 @@ struct Scene {
 		this.triangleNormals = [];
 		this.triangleNormals.reserve(indices.length);
 		foreach (uint[3] triangle; indices) {
-			Vec!3[3] pos = [
-				positions[triangle[0]], positions[triangle[1]],
-				positions[triangle[2]]
-			];
+			Vec!3[3] pos = [positions[triangle[0]], positions[triangle[1]], positions[triangle[2]]];
 			this.triangleNormals ~= (pos[1] - pos[0]).cross(pos[2] - pos[0]).normalize();
 		}
 	}
@@ -130,7 +107,7 @@ struct RayTracer {
 	Screen screen;
 
 	private {
-		debug (single_thread) {
+		version(single_thread) {
 		} else {
 			Thread[] threads;
 			shared uint[2][] threadParams;
@@ -154,7 +131,7 @@ struct RayTracer {
 		static ArrayQueue!BoundingBox boxQueue;
 	}
 
-	debug (single_thread) {
+	version(single_thread) {
 	} else {
 		~this() {
 			atomicStore(DIE, true);
@@ -167,7 +144,7 @@ struct RayTracer {
 	this(Screen screen) {
 		this.screen = screen;
 
-		debug (single_thread) {
+		version(single_thread) {
 		} else {
 			immutable uint threadNum = max(1, totalCPUs - 1);
 			immutable uint perThread = screen.height / threadNum;
@@ -193,7 +170,7 @@ struct RayTracer {
 		}
 	}
 
-	debug (single_thread) {
+	version(single_thread) {
 	} else {
 		void threadTrace() {
 			uint id = atomicFetchAdd(threadCounter, 1);
@@ -247,7 +224,7 @@ struct RayTracer {
 		this.widthFrac = 1.0f / cast(float) screen.width;
 		this.heightFrag = 1.0f / cast(float) screen.height;
 
-		debug (single_thread) {
+		version(single_thread) {
 			traceRows(0, screen.height);
 		} else {
 			threadGate.open();
@@ -271,8 +248,7 @@ struct RayTracer {
 				if (boundDist > 0 && boundDist <= closestIntersection.distance) {
 					// TODO: optimize skipping of boundingboxes (eg. when other intersections have been found)
 					if (box.isLeaf) {
-						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount;
-							i++) {
+						for (uint i = box.firstIndexID; i < box.firstIndexID + box.indexCount; i++) {
 							Hit intersect = intersectTriangle(ray, i);
 							if (intersect.distance < closestIntersection.distance && intersect.distance > 0) {
 								closestIntersection = intersect;
@@ -296,7 +272,7 @@ struct RayTracer {
 		if (closestIntersection.distance == float.max) // no hit
 			return scene.backgroundColor;
 
-		Vec!4 hitColor = shade(closestIntersection);
+		Vec!4 hitColor = flatShade(closestIntersection);
 		if (depth == maxDepth)
 			return hitColor;
 
@@ -308,18 +284,33 @@ struct RayTracer {
 		return hitColor;
 	}
 
+	Vec!4 flatShade(Hit hit) {
+		uint[3] triangle = scene.indices[hit.triangleIndex];
+
+		if (scene.colors.useMaterial) {
+			Vec!2 uv = Vec!2(0);
+			foreach (i; 0 .. 3)
+				uv += (scene.colors.uvs[triangle[i]] % Vec!2(1, 1)) * hit.barycentric[i];
+			Material material = scene.colors.material;
+			return material.baseColor_texture.base.sampleTexture(uv) * material.baseColor_factor;
+		} else {
+			Vec!4 color = Vec!4(0);
+			foreach (i; 0 .. 3)
+				color += scene.colors.vertexColors[triangle[i]] * hit.barycentric[i];
+			return color;
+		}
+	}
+
 	Vec!4 shade(Hit hit) {
 		uint[3] triangle = scene.indices[hit.triangleIndex];
 		Vec!3 normal;
-		Vec!3 color;
+		Vec!4 color;
 		// Determine color & normal
 		if (!scene.colors.useMaterial) {
 			foreach (i; 0 .. 3) {
-				normal += scene.normals[triangle[i]];
-				color += scene.colors.vertexColors[triangle[i]];
+				normal += scene.normals[triangle[i]] * hit.barycentric[i];
+				color += scene.colors.vertexColors[triangle[i]] * hit.barycentric[i];
 			}
-			normal *= hit.barycentric;
-			color *= hit.barycentric;
 			// diffuse = 0.7;
 			// specular = 0.3;
 			// TODO
@@ -328,10 +319,8 @@ struct RayTracer {
 			Material material = scene.colors.material;
 			Vec!2 uv;
 			foreach (i; 0 .. 3)
-				uv += (scene.colors.uvs[triangle[i]] % Vec!2(1, 1));
-			uv *= hit.barycentric;
-			color = material.baseColor_texture.base.sampleTexture(
-				uv) * colors.material.baseColor_factor;
+				uv += (scene.colors.uvs[triangle[i]] % Vec!2(1, 1)) * hit.barycentric[i];
+			color = material.baseColor_texture.base.sampleTexture(uv) * material.baseColor_factor;
 			normal = material.normal_texture.base.sampleTexture(uv);
 			Vec!4 mr = material.metal_roughness_texture.base.sampleTexture(uv);
 			float roughness = mr[1] * material.roughnessFactor;
@@ -413,9 +402,7 @@ struct RayTracer {
 			return intersection;
 		}
 		Vec!3 point = ray.org + ray.dir * dist;
-		Vec!3[3] positions = [
-			pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]
-		];
+		Vec!3[3] positions = [pos0, scene.positions[triangle[1]], scene.positions[triangle[2]]];
 		Vec!3 barycentric = calcBarycentric(positions, normal, point);
 		// Vec!3 barycentric = calcProjectedBarycentric(positions, point); // TODO choose
 		static foreach (i; 0 .. 3)
@@ -508,8 +495,7 @@ struct RayTracer {
 		}
 	}
 
-	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(
-		const float fullArea,
+	static private Vec!3 calcProjectedBarycentric(string firstAxis, string secondAxis)(const float fullArea,
 		const Vec!3[3] verts, const Vec!3 point) {
 		pragma(inline, true);
 		const float fullAreaFrac = 1.0f / fullArea;
@@ -530,8 +516,7 @@ struct RayTracer {
 
 	static private float triangleAreaDouble(const Vec!2[3] verts) {
 		pragma(inline, true);
-		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (
-			verts[1].x - verts[2].x) * (
+		return (verts[0].x - verts[1].x) * (verts[1].y - verts[2].y) + (verts[1].x - verts[2].x) * (
 			verts[1].y - verts[0].y);
 	}
 
