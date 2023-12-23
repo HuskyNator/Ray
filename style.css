@@ -1,5 +1,51 @@
-body {
+* {
+	color: white;
+}
+
+header {
 	display: grid;
-	grid-template-columns: 1fr;
-	justify-items: center;
+	height: 12vh;
+	min-height: 0px;
+	grid-template-columns: 1fr 2fr 1fr;
+	justify-content: center;
+	align-items: center;
+	background-color: #353535;
+	gap: 10px;
+}
+
+header>svg {
+	/* border-style: solid;
+	border-width: 1px;
+	border-color: white;
+	border-radius: 8px; */
+	justify-self: right;
+}
+
+.svg_blue {
+	fill: #00F;
+	stroke: white;
+}
+
+.svg_orange {
+	fill: #FF6800;
+	stroke: white;
+}
+
+.svg_red {
+	stroke: #F00;
+	stroke-width: 2px;
+}
+
+main {
+	background-color: #252525;
+	display: flex;
+	align-items: center;
+	flex-direction: column;
+}
+
+figure,
+img,
+caption,
+body {
+	margin: 0px;
 }
