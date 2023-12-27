@@ -25,7 +25,7 @@ void main(string[] args) {
 	const bool PROFILE = (args.length > 1 && args[1] == "profile");
 	const uint PROFILE_COUNT = (PROFILE && args.length > 2) ? args[2].to!uint : 8;
 	const bool GIF = (args.length > 1 && args[1] == "gif");
-	const uint GIF_COUNT = (args.length > 2) ? args[2].to!uint : 16;
+	const int GIF_COUNT = (args.length > 2) ? args[2].to!uint : 16;
 
 	vdInit();
 	if (RENDER_IMAGE || PROFILE)
@@ -101,11 +101,12 @@ void main(string[] args) {
 		foreach (i; 0 .. GIF_COUNT) {
 			rayTracer.trace(scene, 1, useBVH);
 			images ~= screen.texture.pixels.dup;
+			screen.texture.saveImage("gif_" ~ i.to!string ~ ".png");
 			speler.location = rotationM ^ speler.location;
 		}
 		Image image;
 		image.createLayeredViewFromData(cast(void*) images.ptr, cast(int) width, cast(int) height,
-			cast(int) 4, PixelType.rgba8, cast(int)(width * 4 * ubyte.sizeof),
+			GIF_COUNT, PixelType.rgba8, cast(int)(width * 4 * ubyte.sizeof),
 			cast(int)(width * height * Vec!(4, ubyte).sizeof));
 		image.saveToFile("helmet.gif");
 	} else {
