@@ -15,7 +15,7 @@ import vertexd.core;
 import vertexd.input.gltf_reader;
 import vertexd.mesh;
 import vertexd.misc : degreesToRadians;
-import vertexd.world : World;
+import vertexd.world : Node, World;
 
 void main(string[] args) {
 	uint width = 1920 / 3;
@@ -26,6 +26,8 @@ void main(string[] args) {
 	const uint PROFILE_COUNT = (PROFILE && args.length > 2) ? args[2].to!uint : 8;
 	const bool GIF = (args.length > 1 && args[1] == "gif");
 	const int GIF_COUNT = (args.length > 2) ? args[2].to!uint : 16;
+
+	const bool INTERACTIVE = !(RENDER_IMAGE || PROFILE || GIF);
 
 	vdInit();
 	if (RENDER_IMAGE || PROFILE)
@@ -55,13 +57,19 @@ void main(string[] args) {
 
 	RayTracer rayTracer = RayTracer(screen);
 
-	Speler speler = new Speler();
-	world.addNode(speler);
-	window.setMouseType(MouseType.CAPTURED);
-	window.keyCallbacks ~= &speler.toetsinvoer;
-	window.mousepositionCallbacks ~= &speler.muisinvoer;
-	speler.location = Vec!3(0, 0, 2.5);
-	speler.addAttribute(camera);
+	Node root;
+	if (INTERACTIVE) {
+		Player player = new Player();
+		root = player;
+		window.setMouseType(MouseType.CAPTURED);
+		window.keyCallbacks ~= &player.keyInput;
+		window.mousepositionCallbacks ~= &player.mouseInput;
+	} else {
+		root = new Node();
+	}
+	world.addNode(root);
+	root.location = Vec!3(0, 0, 2.5);
+	root.addAttribute(camera);
 
 	vdStep(); // Needs to be done before render.
 
@@ -93,7 +101,7 @@ void main(string[] args) {
 			writeln("Performance: ", performance, " sec");
 		}
 	} else if (GIF) {
-		Vec!(4, ubyte)[][] images;
+		Vec!(4, ubyte)[] images;
 
 		float angle = 2 * PI / (GIF_COUNT);
 		Quat rotation = Quat.rotation(Vec!3(0, 1, 0), angle);
@@ -101,13 +109,15 @@ void main(string[] args) {
 		foreach (i; 0 .. GIF_COUNT) {
 			rayTracer.trace(scene, 1, useBVH);
 			images ~= screen.texture.pixels.dup;
-			screen.texture.saveImage("gif_" ~ i.to!string ~ ".png");
-			speler.location = rotationM ^ speler.location;
+			root.location = rotationM ^ root.location;
+			root.rotation = rotation * root.rotation;
+			vdStep();
 		}
 		Image image;
 		image.createLayeredViewFromData(cast(void*) images.ptr, cast(int) width, cast(int) height,
 			GIF_COUNT, PixelType.rgba8, cast(int)(width * 4 * ubyte.sizeof),
 			cast(int)(width * height * Vec!(4, ubyte).sizeof));
+		image.flipVertical();
 		image.saveToFile("helmet.gif");
 	} else {
 		while (!vdShouldClose()) {

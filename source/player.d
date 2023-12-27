@@ -1,22 +1,22 @@
 module player;
 import vertexd;
 
-class Speler : Node {
-	private Quat xdraai;
-	private Quat ydraai;
+class Player : Node {
+	private Quat xRot;
+	private Quat yRot;
 
-	private Vec!3 _verplaatsing;
-	private Vec!2 _draai;
-	private Vec!2 _draaiDelta;
-	private Vec!2 _oude_draai;
-	precision snelheid = 1;
-	precision draaiSnelheid = 0.2;
+	private Vec!3 _displacement;
+	private Vec!2 _rotation;
+	private Vec!2 _rotationDelta;
+	private Vec!2 _old_rotation;
+	precision speed = 1;
+	precision rotationSpeed = 0.2;
 
 	this() {
 		super();
 	}
 
-	void toetsinvoer(KeyInput input) nothrow {
+	void keyInput(KeyInput input) nothrow {
 		try {
 			import bindbc.glfw;
 			import bindbc.opengl;
@@ -27,25 +27,25 @@ class Speler : Node {
 			int delta = (input.event == GLFW_PRESS) ? 1 : -1;
 			switch (input.key) {
 				case GLFW_KEY_A:
-					_verplaatsing.x -= delta;
+					_displacement.x -= delta;
 					break;
 				case GLFW_KEY_D:
-					_verplaatsing.x += delta;
+					_displacement.x += delta;
 					break;
 				case GLFW_KEY_SPACE:
-					_verplaatsing.y += delta;
+					_displacement.y += delta;
 					break;
 				case GLFW_KEY_LEFT_SHIFT:
-					_verplaatsing.y -= delta;
+					_displacement.y -= delta;
 					break;
 				case GLFW_KEY_S:
-					_verplaatsing.z -= delta;
+					_displacement.z -= delta;
 					break;
 				case GLFW_KEY_W:
-					_verplaatsing.z += delta;
+					_displacement.z += delta;
 					break;
 				case GLFW_KEY_LEFT_CONTROL:
-					_draai = Vec!2(0);
+					_rotation = Vec!2(0);
 					// location = Vec!3(0);
 					break;
 				default:
@@ -54,11 +54,11 @@ class Speler : Node {
 		}
 	}
 
-	void muisinvoer(MousepositionInput input) nothrow {
-		_draaiDelta.y -= input.x - _oude_draai.x;
-		_draaiDelta.x -= input.y - _oude_draai.y;
-		_oude_draai.x = input.x;
-		_oude_draai.y = input.y;
+	void mouseInput(MousepositionInput input) nothrow {
+		_rotationDelta.y -= input.x - _old_rotation.x;
+		_rotationDelta.x -= input.y - _old_rotation.y;
+		_old_rotation.x = input.x;
+		_old_rotation.y = input.y;
 	}
 
 	import std.datetime;
@@ -68,28 +68,28 @@ class Speler : Node {
 
 		double deltaSec = deltaT.total!"hnsecs"() / 10_000_000.0;
 
-		Vec!3 vooruit = ydraai * Vec!3([0, 0, -1]);
-		Vec!3 rechts = ydraai * Vec!3([1, 0, 0]);
+		Vec!3 forward = yRot * Vec!3([0, 0, -1]);
+		Vec!3 right = yRot * Vec!3([1, 0, 0]);
 
-		Mat!3 verplaatsMat;
-		verplaatsMat.setCol(0, rechts);
-		verplaatsMat.setCol(1, Vec!3([0, 1, 0]));
-		verplaatsMat.setCol(2, vooruit);
+		Mat!3 displaceMat;
+		displaceMat.setCol(0, right);
+		displaceMat.setCol(1, Vec!3([0, 1, 0]));
+		displaceMat.setCol(2, forward);
 
-		this.location = this.location + cast(Vec!3)(verplaatsMat ^ (_verplaatsing * cast(prec)(snelheid * deltaSec)));
+		this.location = this.location + cast(Vec!3)(displaceMat ^ (_displacement * cast(prec)(speed * deltaSec)));
 
-		_draaiDelta = _draaiDelta * cast(prec)(draaiSnelheid * deltaSec);
-		_draai = _draai + _draaiDelta;
-		if (abs(_draai.x) > PI_2)
-			_draai.x = sgn(_draai.x) * PI_2;
-		if (abs(_draai.y) > PI)
-			_draai.y -= sgn(_draai.y) * 2 * PI;
+		_rotationDelta = _rotationDelta * cast(prec)(rotationSpeed * deltaSec);
+		_rotation = _rotation + _rotationDelta;
+		if (abs(_rotation.x) > PI_2)
+			_rotation.x = sgn(_rotation.x) * PI_2;
+		if (abs(_rotation.y) > PI)
+			_rotation.y -= sgn(_rotation.y) * 2 * PI;
 
-		xdraai = Quat.rotation(Vec!3([1, 0, 0]), _draai.x);
-		ydraai = Quat.rotation(Vec!3([0, 1, 0]), _draai.y);
-		this.rotation = ydraai * xdraai;
+		xRot = Quat.rotation(Vec!3([1, 0, 0]), _rotation.x);
+		yRot = Quat.rotation(Vec!3([0, 1, 0]), _rotation.y);
+		this.rotation = yRot * xRot;
 
-		_draaiDelta = Vec!2(0);
+		_rotationDelta = Vec!2(0);
 
 		super.logicStep(deltaT);
 	}
