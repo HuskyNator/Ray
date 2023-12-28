@@ -2,15 +2,23 @@
 	color: white;
 }
 
-header {
-	display: grid;
-	height: 12vh;
-	min-height: 0px;
-	grid-template-columns: 1fr 2fr 1fr;
+a:hover {
+	color: #40a0ff
+}
+
+.h_flex {
+	display: flex;
 	justify-content: center;
 	align-items: center;
 	background-color: #353535;
 	gap: 10px;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	display: grid;
+	grid-template-rows: 75px 1fr 40px;
 }
 
 header>svg {
@@ -43,9 +51,19 @@ main {
 	flex-direction: column;
 }
 
-figure,
-img,
-caption,
-body {
-	margin: 0px;
+main img {
+	width: 480px;
+}
+
+footer a {
+	height: 100%;
+	text-decoration: none;
+}
+
+footer img {
+	height: 70%;
+}
+
+footer a:hover {
+	text-decoration: underline;
 }

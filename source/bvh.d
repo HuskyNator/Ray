@@ -123,9 +123,11 @@ struct BVH {
 		Centroid[][3] allCentroids = [centroids, centroids.dup, centroids.dup];
 		buildTree(tree[0], allCentroids); // Build the tree
 
-		import std.stdio;
+		debug {
+			import std.stdio;
 
-		writeln(this.toString(true));
+			writeln(this.toString(true));
+		}
 
 		// Create resorted indeces array to match up with BoundingBox ID's
 		uint[3][] newIndices = [];
