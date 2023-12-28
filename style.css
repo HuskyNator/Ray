@@ -52,7 +52,7 @@ main {
 }
 
 main img {
-	width: 480px;
+	width: min(480px, 100vw);
 }
 
 footer a {
