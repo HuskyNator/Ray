@@ -103,7 +103,7 @@ void main(string[] args) {
 	} else if (GIF) {
 		Vec!(4, ubyte)[] images;
 
-		float angle = 2 * PI / (GIF_COUNT);
+		float angle = -2 * PI / (GIF_COUNT);
 		Quat rotation = Quat.rotation(Vec!3(0, 1, 0), angle);
 		Mat!3 rotationM = rotation.toMat;
 		foreach (i; 0 .. GIF_COUNT) {
@@ -118,7 +118,7 @@ void main(string[] args) {
 			GIF_COUNT, PixelType.rgba8, cast(int)(width * 4 * ubyte.sizeof),
 			cast(int)(width * height * Vec!(4, ubyte).sizeof));
 		image.flipVertical();
-		image.saveToFile("helmet.gif");
+		image.saveToFile("../logs/helmet.gif");
 	} else {
 		while (!vdShouldClose()) {
 			rayTracer.trace(scene, 1, useBVH);
