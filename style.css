@@ -6,11 +6,39 @@ a:hover {
 	color: #40a0ff
 }
 
+header {
+	display: grid;
+	grid-template-columns: 80px 1fr;
+	grid-template-rows: 1fr;
+	background-color: #353535;
+}
+
+#profile {
+	z-index: 1;
+	justify-self: center;
+	align-self: center;
+	grid-area: 1 / 1 / 1 / 2;
+}
+
+#profile>img {
+	border-radius: 25%;
+}
+
+#profile>img:hover {
+	/* transform: scale(1.1); */
+	border-style: solid;
+	border-width: 2px;
+	border-color: #40a0ff
+}
+
+#banner {
+	grid-area: 1 / 1 / 1 / 3;
+}
+
 .h_flex {
 	display: flex;
 	justify-content: center;
 	align-items: center;
-	background-color: #353535;
 	gap: 10px;
 }
 
@@ -53,6 +81,10 @@ main {
 
 main img {
 	width: min(480px, 100vw);
+}
+
+footer {
+	background-color: #353535;
 }
 
 footer a {
